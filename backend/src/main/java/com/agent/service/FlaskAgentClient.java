@@ -2,8 +2,10 @@ package com.agent.service;
 
 import com.agent.config.AppConfig;
 import com.agent.model.ChatMessage;
+import com.agent.util.AppLogger;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
+import org.slf4j.Logger;
 
 import java.io.*;
 import java.net.HttpURLConnection;
@@ -17,6 +19,7 @@ import java.util.List;
  */
 public class FlaskAgentClient {
 
+    private static final Logger log = AppLogger.get(FlaskAgentClient.class);
     private static final String FLASK_AGENT_URL = AppConfig.FLASK_AGENT_URL;
 
     /**
@@ -40,11 +43,14 @@ public class FlaskAgentClient {
     public static void streamChat(long userId, long sessionId, String message,
                                   List<ChatMessage> history, SseCallback callback) throws Exception {
 
+        log.info("FLASK_AGENT REQUEST | userId={} | sessionId={} | url={}",
+                userId, sessionId, FLASK_AGENT_URL + "/agent/chat");
+
         // Build request body
         JsonObject requestBody = new JsonObject();
         requestBody.addProperty("session_id", sessionId);
-        requestBody.addProperty("user_id", userId);
-        requestBody.addProperty("message", message);
+        requestBody.addProperty("user_id",    userId);
+        requestBody.addProperty("message",    message);
         requestBody.add("history", buildHistoryArray(history));
 
         // Make HTTP POST request to Flask Agent
@@ -54,15 +60,27 @@ public class FlaskAgentClient {
         conn.setRequestProperty("Content-Type", "application/json");
         conn.setRequestProperty("Accept", "text/event-stream");
         conn.setDoOutput(true);
-        conn.setConnectTimeout(10000);       // 10 second connect timeout
-        conn.setReadTimeout(300000);         // 5 minute read timeout for long AI responses
+        conn.setConnectTimeout(10000);    // 10 second connect timeout
+        conn.setReadTimeout(300000);      // 5 minute read timeout for long AI responses
+
+        long sendStart = System.currentTimeMillis();
 
         // Send request body
         try (OutputStream os = conn.getOutputStream()) {
             os.write(requestBody.toString().getBytes(StandardCharsets.UTF_8));
         }
 
+        int httpStatus = conn.getResponseCode();
+        log.debug("FLASK_AGENT CONNECTED | userId={} | sessionId={} | httpStatus={} | connectMs={}",
+                userId, sessionId, httpStatus, System.currentTimeMillis() - sendStart);
+
+        if (httpStatus < 200 || httpStatus >= 300) {
+            log.error("FLASK_AGENT ERROR | userId={} | sessionId={} | httpStatus={}",
+                    userId, sessionId, httpStatus);
+        }
+
         // Read SSE stream from Flask Agent
+        int eventCount = 0;
         try (BufferedReader reader = new BufferedReader(
                 new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8))) {
 
@@ -74,7 +92,9 @@ public class FlaskAgentClient {
                     currentEvent = line.substring(7).trim();
                 } else if (line.startsWith("data: ")) {
                     String data = line.substring(6);
+                    log.trace("FLASK_AGENT SSE | userId={} | sessionId={} | event={}", userId, sessionId, currentEvent);
                     callback.onEvent(currentEvent, data);
+                    eventCount++;
 
                     // Stop reading after terminal events
                     if ("done".equals(currentEvent) || "error".equals(currentEvent)) {
@@ -85,6 +105,8 @@ public class FlaskAgentClient {
             }
         } finally {
             conn.disconnect();
+            log.info("FLASK_AGENT DONE | userId={} | sessionId={} | events={} | totalMs={}",
+                    userId, sessionId, eventCount, System.currentTimeMillis() - sendStart);
         }
     }
 

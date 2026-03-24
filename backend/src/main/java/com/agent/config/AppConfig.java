@@ -1,9 +1,10 @@
 package com.agent.config;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.io.InputStream;
 import java.util.Properties;
-import java.util.logging.Level;
-import java.util.logging.Logger;
 
 /**
  * Application configuration — resolves values in this priority order:
@@ -17,7 +18,7 @@ import java.util.logging.Logger;
  */
 public class AppConfig {
 
-    private static final Logger LOG = Logger.getLogger(AppConfig.class.getName());
+    private static final Logger log = LoggerFactory.getLogger(AppConfig.class);
 
     // ── secrets.properties loaded once at class-init ────────────────────
     private static final Properties SECRETS = new Properties();
@@ -27,13 +28,13 @@ public class AppConfig {
                 .getResourceAsStream("secrets.properties")) {
             if (in != null) {
                 SECRETS.load(in);
-                LOG.info("secrets.properties loaded from classpath.");
+                log.info("secrets.properties loaded from classpath.");
             } else {
-                LOG.warning("secrets.properties NOT found on classpath — "
+                log.warn("secrets.properties NOT found on classpath — "
                         + "falling back to environment variables / defaults.");
             }
         } catch (Exception e) {
-            LOG.log(Level.SEVERE, "Failed to load secrets.properties", e);
+            log.error("Failed to load secrets.properties", e);
         }
     }
 

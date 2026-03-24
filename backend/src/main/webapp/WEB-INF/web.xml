@@ -7,7 +7,26 @@
 
     <display-name>AI Task Agent Backend</display-name>
 
-    <!-- CORS filter must run FIRST -->
+    <!-- ═══════════════════════════════════════════════════════════════════
+         FILTER ORDER (top = first to execute):
+           1. LoggingFilter   — logs every request + response with timing
+           2. CorsFilter      — adds CORS headers, handles OPTIONS preflight
+           3. ApiPathNormalizationFilter
+           4. AuthFilter      — validates JWT on /api/* protected routes
+         ═══════════════════════════════════════════════════════════════ -->
+
+    <!-- 1. Logging filter — MUST be first so every request is captured -->
+    <filter>
+        <filter-name>LoggingFilter</filter-name>
+        <filter-class>com.agent.filter.LoggingFilter</filter-class>
+        <async-supported>true</async-supported>
+    </filter>
+    <filter-mapping>
+        <filter-name>LoggingFilter</filter-name>
+        <url-pattern>/*</url-pattern>
+    </filter-mapping>
+
+    <!-- 2. CORS filter must run SECOND (after logging, before auth) -->
     <filter>
         <filter-name>CorsFilter</filter-name>
         <filter-class>com.agent.filter.CorsFilter</filter-class>
