@@ -1,0 +1,1885 @@
+openapi: 3.1.0
+info:
+  title: AI Task Agent Backend API
+  description: |
+    Backend REST API for the AI Task Agent application.
+
+    A Java Servlet-based backend running on Tomcat 9 that provides:
+    - **Authentication** — Register, login, JWT-based sessions
+    - **Chat** — AI-powered conversational sessions with SSE streaming
+    - **Projects** — AI-generated project management and download
+    - **Tasks** — Scheduled task management, cancellation, and output download
+    - **OAuth** — Link external OAuth providers for tool integrations
+    - **Preferences** — Per-user settings with deep-merge defaults
+
+    ## Authentication
+    All `/api/*` endpoints (except `/api/auth/login` and `/api/auth/register`) require a
+    JWT Bearer token in the `Authorization` header. The token can also be passed as a
+    `?token=` query parameter for SSE/download endpoints.
+
+    ## Streaming (SSE)
+    The `/api/chat/{sessionId}/send` endpoint returns a `text/event-stream` response.
+    Events are sent in Server-Sent Events format:
+    ```
+    event: thinking
+    data: {"content":"Analyzing your request..."}
+
+    event: iteration
+    data: {"iteration":1,"tool":"web_search"}
+
+    event: token
+    data: {"content":"Hello"}
+
+    event: done
+    data: {"message_id":42,"session_title":"My conversation"}
+    ```
+  version: 1.2.0
+  contact:
+    name: AI Task Agent Team
+  license:
+    name: Proprietary
+
+servers:
+  - url: /
+    description: Application context root (deployed on Tomcat)
+
+tags:
+  - name: Auth
+    description: User registration, login, and profile
+  - name: Preferences
+    description: User preferences management
+  - name: OAuth
+    description: OAuth provider linking and token management
+  - name: Sessions
+    description: Chat session CRUD
+  - name: Chat
+    description: AI chat streaming
+  - name: Messages
+    description: Chat message history
+  - name: Projects
+    description: AI-generated project management
+  - name: Tasks
+    description: Scheduled task management
+  - name: Test
+    description: Development/test endpoints (remove before production)
+
+# ──────────────────────────────────────────────────────────────
+# Security
+# ──────────────────────────────────────────────────────────────
+security:
+  - BearerAuth: []
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        JWT token obtained from `/api/auth/login`.
+        Pass as `Authorization: Bearer <token>` header or `?token=<token>` query parameter.
+
+  # ────────────────────────────────────────────────────────────
+  # Reusable Schemas
+  # ────────────────────────────────────────────────────────────
+  schemas:
+
+    # ── Envelope Wrappers ──
+    SuccessResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+          const: true
+        data:
+          description: Response payload (object, array, or primitive)
+
+    ErrorResponse:
+      type: object
+      required: [success, error]
+      properties:
+        success:
+          type: boolean
+          const: false
+        error:
+          type: string
+          description: Human-readable error message
+      example:
+        success: false
+        error: "Missing authentication token"
+
+    # ── Auth ──
+    RegisterRequest:
+      type: object
+      required: [username, email, password]
+      properties:
+        username:
+          type: string
+          minLength: 1
+          example: johndoe
+        email:
+          type: string
+          format: email
+          example: john@example.com
+        password:
+          type: string
+          minLength: 6
+          format: password
+          example: secret123
+
+    RegisterData:
+      type: object
+      properties:
+        user_id:
+          type: integer
+          format: int64
+          example: 1
+        username:
+          type: string
+          example: johndoe
+        email:
+          type: string
+          format: email
+          example: john@example.com
+        token:
+          type: string
+          description: JWT token for immediate authenticated access
+          example: eyJhbGciOiJIUzI1NiJ9...
+
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+          example: john@example.com
+        password:
+          type: string
+          format: password
+          example: secret123
+
+    LoginData:
+      type: object
+      properties:
+        user_id:
+          type: integer
+          format: int64
+          example: 1
+        username:
+          type: string
+          example: johndoe
+        email:
+          type: string
+          format: email
+          example: john@example.com
+        token:
+          type: string
+          description: JWT token for subsequent authenticated requests
+          example: eyJhbGciOiJIUzI1NiJ9...
+
+    UserProfile:
+      type: object
+      properties:
+        user_id:
+          type: integer
+          format: int64
+          example: 1
+        username:
+          type: string
+          example: johndoe
+        email:
+          type: string
+          format: email
+          example: john@example.com
+        preferences:
+          $ref: '#/components/schemas/Preferences'
+
+    # ── Preferences ──
+    Preferences:
+      type: object
+      description: |
+        User preferences. Stored values are deep-merged over defaults.
+        Any subset of keys can be sent for partial updates.
+      properties:
+        theme:
+          type: string
+          enum: [light, dark]
+          default: light
+        language:
+          type: string
+          default: en
+        notifications:
+          type: object
+          properties:
+            email:
+              type: boolean
+              default: false
+            task_complete:
+              type: boolean
+              default: true
+            task_failed:
+              type: boolean
+              default: true
+        editor:
+          type: object
+          properties:
+            font_size:
+              type: integer
+              default: 14
+            word_wrap:
+              type: boolean
+              default: true
+        chat:
+          type: object
+          properties:
+            stream_speed:
+              type: string
+              enum: [slow, normal, fast]
+              default: normal
+            show_tool_details:
+              type: boolean
+              default: false
+            auto_scroll:
+              type: boolean
+              default: true
+        default_model:
+          type: string
+          default: claude-sonnet-4-20250514
+        timezone:
+          type: string
+          default: UTC
+      example:
+        theme: dark
+        language: en
+        notifications:
+          email: false
+          task_complete: true
+          task_failed: true
+        editor:
+          font_size: 16
+          word_wrap: true
+        chat:
+          stream_speed: normal
+          show_tool_details: false
+          auto_scroll: true
+        default_model: claude-sonnet-4-20250514
+        timezone: UTC
+
+    # ── OAuth ──
+    OAuthLinkRequest:
+      type: object
+      required: [provider, client_id, client_secret, token_endpoint]
+      properties:
+        provider:
+          type: string
+          description: Name of the OAuth provider
+          example: google
+        client_id:
+          type: string
+          example: your-client-id
+        client_secret:
+          type: string
+          format: password
+          example: your-client-secret
+        token_endpoint:
+          type: string
+          format: uri
+          description: Provider's token exchange URL
+          example: https://oauth2.googleapis.com/token
+        oauth_token_link:
+          type: string
+          format: uri
+          description: Provider's authorization URL (for building auth redirect)
+          example: https://accounts.google.com/o/oauth2/v2/auth
+        scope:
+          type: string
+          description: OAuth scopes (space-separated)
+          example: openid email profile
+        redirect_uri:
+          type: string
+          format: uri
+          description: Redirect URI registered with the provider
+          example: https://myapp.com/api/auth/oauth/callback
+        header_type:
+          type: string
+          default: Bearer
+          description: Authorization header scheme
+          example: Bearer
+
+    OAuthLinkData:
+      type: object
+      properties:
+        provider:
+          type: string
+          example: google
+        status:
+          type: string
+          example: credentials_saved
+        authorization_url:
+          type: string
+          format: uri
+          description: Full authorization URL to redirect the user to (only present if oauth_token_link, scope, and redirect_uri were all provided)
+          example: https://accounts.google.com/o/oauth2/v2/auth?client_id=...&redirect_uri=...&scope=...&state=google_1719000000&response_type=code
+
+    OAuthCallbackQuery:
+      type: object
+      properties:
+        code:
+          type: string
+          description: Authorization code from provider
+        state:
+          type: string
+          description: "State parameter (format: providerName_timestamp)"
+        redirect_uri:
+          type: string
+          format: uri
+          description: Redirect URI used in the authorization request
+
+    OAuthCallbackPostRequest:
+      type: object
+      required: [provider, code, redirect_uri]
+      properties:
+        provider:
+          type: string
+          example: google
+        code:
+          type: string
+          description: Authorization code from provider
+          example: 4/0AY0e-g...
+        redirect_uri:
+          type: string
+          format: uri
+          example: https://myapp.com/api/auth/oauth/callback
+
+    OAuthCallbackData:
+      type: object
+      properties:
+        provider:
+          type: string
+          example: google
+        status:
+          type: string
+          example: tokens_exchanged
+        has_access_token:
+          type: boolean
+          example: true
+        has_refresh_token:
+          type: boolean
+          example: true
+        expires_at:
+          type: string
+          format: date-time
+          nullable: true
+          example: "2025-01-15T12:00:00"
+
+    OAuthProviderEntry:
+      type: object
+      properties:
+        provider:
+          type: string
+          example: google
+        header_type:
+          type: string
+          example: Bearer
+        has_access_token:
+          type: boolean
+          example: true
+        has_refresh_token:
+          type: boolean
+          example: true
+        expires_at:
+          type: string
+          format: date-time
+          nullable: true
+        is_expired:
+          type: boolean
+          example: false
+        token_endpoint:
+          type: string
+          format: uri
+          example: https://oauth2.googleapis.com/token
+        oauth_token_link:
+          type: string
+          format: uri
+          nullable: true
+        updated_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    OAuthRefreshRequest:
+      type: object
+      required: [provider]
+      properties:
+        provider:
+          type: string
+          example: google
+
+    OAuthRefreshData:
+      type: object
+      properties:
+        provider:
+          type: string
+          example: google
+        status:
+          type: string
+          example: refreshed
+        expires_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    OAuthUnlinkData:
+      type: object
+      properties:
+        provider:
+          type: string
+          example: google
+        status:
+          type: string
+          example: unlinked
+
+    # ── Sessions ──
+    CreateSessionRequest:
+      type: object
+      properties:
+        title:
+          type: string
+          default: New conversation
+          example: Help me build a web scraper
+
+    SessionData:
+      type: object
+      properties:
+        session_id:
+          type: integer
+          format: int64
+          example: 42
+        title:
+          type: string
+          example: Help me build a web scraper
+        summary:
+          type: string
+          nullable: true
+          example: null
+        created_at:
+          type: string
+          format: date-time
+          example: "2025-01-15T10:30:00"
+        updated_at:
+          type: string
+          format: date-time
+          example: "2025-01-15T10:35:00"
+
+    # ── Messages ──
+    MessageData:
+      type: object
+      properties:
+        message_id:
+          type: integer
+          format: int64
+          example: 101
+        role:
+          type: string
+          enum: [user, assistant]
+          example: user
+        content:
+          type: string
+          example: "How do I sort a list in Python?"
+        created_at:
+          type: string
+          format: date-time
+          example: "2025-01-15T10:31:00"
+
+    # ── Chat ──
+    ChatSendRequest:
+      type: object
+      required: [message]
+      properties:
+        message:
+          type: string
+          minLength: 1
+          description: The user's message to send to the AI agent
+          example: "Create a Python script that scrapes weather data"
+
+    SseThinkingEvent:
+      type: object
+      properties:
+        content:
+          type: string
+          description: Thinking/reasoning text from the AI
+          example: "Analyzing your request..."
+
+    SseIterationEvent:
+      type: object
+      properties:
+        iteration:
+          type: integer
+          example: 1
+        tool:
+          type: string
+          example: web_search
+
+    SseTokenEvent:
+      type: object
+      properties:
+        content:
+          type: string
+          description: Incremental text token from the AI response
+          example: "Here"
+
+    SseDoneEvent:
+      type: object
+      properties:
+        message_id:
+          type: integer
+          format: int64
+          description: Database ID of the saved assistant message
+          example: 102
+        session_title:
+          type: string
+          description: Current session title (may be auto-generated from first message)
+          example: "Create a Python script..."
+
+    SseErrorEvent:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Something went wrong. Please try again."
+
+    # ── Projects ──
+    ProjectData:
+      type: object
+      properties:
+        project_id:
+          type: string
+          description: Unique project identifier from the AI executor
+          example: proj_abc123
+        name:
+          type: string
+          example: weather-scraper
+        description:
+          type: string
+          nullable: true
+          example: A Python web scraper for weather data
+        files:
+          description: JSON array of file paths or file metadata in the project
+          oneOf:
+            - type: array
+              items:
+                type: string
+            - type: array
+              items:
+                type: object
+          example: ["main.py", "requirements.txt", "config.json"]
+        created_at:
+          type: string
+          format: date-time
+          example: "2025-01-15T11:00:00"
+
+    # ── Tasks ──
+    TaskData:
+      type: object
+      properties:
+        task_id:
+          type: string
+          description: Unique task identifier
+          example: task_xyz789
+        description:
+          type: string
+          nullable: true
+          example: Scrape weather data every 30 minutes
+        status:
+          type: string
+          enum: [scheduled, running, completed, cancelled, failed]
+          example: running
+        interval_seconds:
+          type: integer
+          description: Execution interval in seconds
+          example: 1800
+        total_runs:
+          type: integer
+          example: 48
+        completed_runs:
+          type: integer
+          example: 12
+        output_file:
+          type: string
+          nullable: true
+          description: Path to the task output file on the executor
+          example: weather_data.csv
+        started_at:
+          type: string
+          format: date-time
+          nullable: true
+          example: "2025-01-15T08:00:00"
+        ends_at:
+          type: string
+          format: date-time
+          example: "2025-01-16T08:00:00"
+        created_at:
+          type: string
+          format: date-time
+          example: "2025-01-15T07:55:00"
+
+    TaskCancelData:
+      type: object
+      properties:
+        task_id:
+          type: string
+          example: task_xyz789
+        status:
+          type: string
+          example: cancelled
+
+    # ── Test ──
+    TestHealthData:
+      type: object
+      properties:
+        status:
+          type: string
+          example: ok
+        mcp_url:
+          type: string
+          format: uri
+          example: https://agent.example.com
+        message:
+          type: string
+          example: 'POST to this endpoint with {"message": "hello"} to test AI agent streaming'
+
+    TestChatRequest:
+      type: object
+      required: [message]
+      properties:
+        message:
+          type: string
+          example: "Hello, what can you do?"
+
+# ──────────────────────────────────────────────────────────────
+# Paths
+# ──────────────────────────────────────────────────────────────
+paths:
+
+  # ════════════════════════════════════════════════════════════
+  # AUTH
+  # ════════════════════════════════════════════════════════════
+
+  /api/auth/register:
+    post:
+      tags: [Auth]
+      summary: Register a new user
+      operationId: register
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+      responses:
+        '201':
+          description: User created successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/RegisterData'
+        '400':
+          description: Validation error (missing fields, short password, invalid email)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                missing_username:
+                  value: { success: false, error: "Username is required" }
+                missing_email:
+                  value: { success: false, error: "Email is required" }
+                short_password:
+                  value: { success: false, error: "Password must be at least 6 characters" }
+                invalid_email:
+                  value: { success: false, error: "Invalid email format" }
+        '409':
+          description: Username or email already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                error: "Username or email already exists"
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/auth/login:
+    post:
+      tags: [Auth]
+      summary: Login and receive JWT token
+      operationId: login
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/LoginData'
+        '400':
+          description: Missing email or password
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Invalid email or password
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                error: "Invalid email or password"
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/auth/me:
+    get:
+      tags: [Auth]
+      summary: Get current authenticated user profile
+      operationId: getMe
+      responses:
+        '200':
+          description: Current user profile with effective preferences
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/UserProfile'
+        '401':
+          description: Missing or invalid authentication token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  # ════════════════════════════════════════════════════════════
+  # PREFERENCES
+  # ════════════════════════════════════════════════════════════
+
+  /api/auth/preferences:
+    get:
+      tags: [Preferences]
+      summary: Get current user preferences
+      operationId: getPreferences
+      description: |
+        Returns the effective preferences (server defaults deep-merged with user overrides).
+      responses:
+        '200':
+          description: User preferences
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          preferences:
+                            $ref: '#/components/schemas/Preferences'
+        '401':
+          description: Missing or invalid authentication token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    put:
+      tags: [Preferences]
+      summary: Update user preferences (partial deep-merge)
+      operationId: updatePreferences
+      description: |
+        Accepts a partial preferences object. Values are deep-merged into the
+        existing preferences. Nested objects are recursively merged — only the
+        keys you send are overwritten.
+
+        **Example:** Sending `{"theme": "dark"}` will only change the theme,
+        leaving all other preferences intact.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Preferences'
+            examples:
+              change_theme:
+                summary: Change theme only
+                value: { theme: dark }
+              update_editor:
+                summary: Update editor settings
+                value: { editor: { font_size: 18 } }
+      responses:
+        '200':
+          description: Preferences updated — returns full merged preferences
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          message:
+                            type: string
+                            example: Preferences updated
+                          preferences:
+                            $ref: '#/components/schemas/Preferences'
+        '400':
+          description: Invalid JSON body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Missing or invalid authentication token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  # ════════════════════════════════════════════════════════════
+  # OAUTH
+  # ════════════════════════════════════════════════════════════
+
+  /api/auth/oauth/link:
+    post:
+      tags: [OAuth]
+      summary: Link an OAuth provider (save client credentials)
+      operationId: linkOAuthProvider
+      description: |
+        Saves OAuth client credentials for a provider. If `oauth_token_link`, `scope`,
+        and `redirect_uri` are all provided, an `authorization_url` is returned that the
+        frontend can redirect the user to.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OAuthLinkRequest'
+      responses:
+        '201':
+          description: Provider credentials saved
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/OAuthLinkData'
+        '400':
+          description: Missing required fields
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Missing or invalid authentication token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    get:
+      tags: [OAuth]
+      summary: List all linked OAuth providers
+      operationId: listOAuthProviders
+      responses:
+        '200':
+          description: Array of linked providers
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/OAuthProviderEntry'
+        '401':
+          description: Missing or invalid authentication token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    put:
+      tags: [OAuth]
+      summary: Refresh an OAuth provider's access token
+      operationId: refreshOAuthToken
+      description: |
+        Uses the stored refresh token and client credentials to obtain a new
+        access token from the provider's token endpoint.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OAuthRefreshRequest'
+      responses:
+        '200':
+          description: Token refreshed
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/OAuthRefreshData'
+        '400':
+          description: Missing provider
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Missing or invalid authentication token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    delete:
+      tags: [OAuth]
+      summary: Unlink an OAuth provider
+      operationId: unlinkOAuthProvider
+      parameters:
+        - name: provider
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Name of the provider to unlink
+          example: google
+      responses:
+        '200':
+          description: Provider unlinked
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/OAuthUnlinkData'
+        '400':
+          description: Missing provider query parameter
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Missing or invalid authentication token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Provider not linked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                error: "Provider 'google' not linked"
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/auth/oauth/callback:
+    get:
+      tags: [OAuth]
+      summary: OAuth callback (redirect from provider)
+      operationId: oauthCallbackGet
+      description: |
+        Handles the OAuth redirect from the provider. Exchanges the authorization
+        code for access/refresh tokens. The provider is determined from the `state`
+        parameter (format: `providerName_timestamp`).
+      parameters:
+        - name: code
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Authorization code from the OAuth provider
+        - name: state
+          in: query
+          schema:
+            type: string
+          description: "State parameter (format: providerName_timestamp)"
+          example: google_1719000000
+        - name: redirect_uri
+          in: query
+          schema:
+            type: string
+            format: uri
+          description: Redirect URI (defaults to the current request URL if omitted)
+        - name: error
+          in: query
+          schema:
+            type: string
+          description: Error code from provider (if authorization was denied)
+        - name: error_description
+          in: query
+          schema:
+            type: string
+          description: Error description from provider
+      responses:
+        '200':
+          description: Tokens exchanged successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/OAuthCallbackData'
+        '400':
+          description: Missing code, unable to determine provider, or OAuth error from provider
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Missing or invalid authentication token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    post:
+      tags: [OAuth]
+      summary: OAuth callback (manual code exchange)
+      operationId: oauthCallbackPost
+      description: |
+        Manually exchange an authorization code for tokens by providing
+        the provider name, code, and redirect URI in the request body.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OAuthCallbackPostRequest'
+      responses:
+        '200':
+          description: Tokens exchanged successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/OAuthCallbackData'
+        '400':
+          description: Missing required fields
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Missing or invalid authentication token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  # ════════════════════════════════════════════════════════════
+  # SESSIONS
+  # ════════════════════════════════════════════════════════════
+
+  /api/sessions:
+    get:
+      tags: [Sessions]
+      summary: List all chat sessions for the current user
+      operationId: listSessions
+      description: Returns sessions ordered by most recently updated.
+      responses:
+        '200':
+          description: Array of chat sessions
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/SessionData'
+        '401':
+          description: Missing or invalid authentication token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    post:
+      tags: [Sessions]
+      summary: Create a new chat session
+      operationId: createSession
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSessionRequest'
+            examples:
+              default_title:
+                summary: Use default title
+                value: {}
+              custom_title:
+                summary: Custom title
+                value: { title: "Python web scraper project" }
+      responses:
+        '201':
+          description: Session created
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/SessionData'
+        '401':
+          description: Missing or invalid authentication token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/sessions/{sessionId}:
+    parameters:
+      - name: sessionId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+        description: Chat session ID
+        example: 42
+
+    get:
+      tags: [Sessions]
+      summary: Get a specific chat session
+      operationId: getSession
+      responses:
+        '200':
+          description: Session details
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/SessionData'
+        '400':
+          description: Invalid session ID format
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Missing or invalid authentication token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Session not found or does not belong to user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    delete:
+      tags: [Sessions]
+      summary: Delete a chat session and all its messages
+      operationId: deleteSession
+      responses:
+        '200':
+          description: Session deleted
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          message:
+                            type: string
+                            example: Session deleted
+        '400':
+          description: Invalid session ID format
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Missing or invalid authentication token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Session not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  # ════════════════════════════════════════════════════════════
+  # MESSAGES
+  # ════════════════════════════════════════════════════════════
+
+  /api/messages/{sessionId}:
+    parameters:
+      - name: sessionId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+        description: Chat session ID
+        example: 42
+
+    get:
+      tags: [Messages]
+      summary: Get all messages in a chat session
+      operationId: getMessages
+      description: |
+        Returns messages in chronological order (oldest first).
+
+        **Endpoint:** `GET /api/messages/{sessionId}`
+      responses:
+        '200':
+          description: Array of messages
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/MessageData'
+        '400':
+          description: Invalid path or session ID format
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Missing or invalid authentication token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Session not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  # ════════════════════════════════════════════════════════════
+  # CHAT (SSE Streaming)
+  # ════════════════════════════════════════════════════════════
+
+  /api/chat/{sessionId}/send:
+    parameters:
+      - name: sessionId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+        description: Chat session ID
+        example: 42
+
+    post:
+      tags: [Chat]
+      summary: Send a message and stream AI response (SSE)
+      operationId: sendChatMessage
+      description: |
+        Sends a user message to the AI agent and returns a **Server-Sent Events (SSE)**
+        stream with the response. The connection stays open until the AI finishes
+        responding.
+
+        ### SSE Event Types
+
+        | Event | Data Schema | Description |
+        |-------|-------------|-------------|
+        | `thinking` | `{"content": "..."}` | AI reasoning/thinking text |
+        | `iteration` | `{"iteration": 1, "tool": "..."}` | Tool use iteration |
+        | `token` | `{"content": "..."}` | Incremental response text token |
+        | `done` | `{"message_id": 102, "session_title": "..."}` | Stream complete |
+        | `error` | `{"error": "..."}` | Error occurred during processing |
+
+        ### Side Effects
+        - The user message is saved to the database before streaming begins
+        - The full assistant response is saved after streaming completes
+        - If this is the first message in a session titled "New conversation",
+          the title is auto-updated from the user's message (truncated at 50 chars)
+
+        ### Timeout
+        The async context has a 5-minute (300,000ms) timeout.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChatSendRequest'
+      responses:
+        '200':
+          description: SSE stream of AI response events
+          content:
+            text/event-stream:
+              schema:
+                type: string
+                description: |
+                  Server-Sent Events stream. Each event has the format:
+                  ```
+                  event: <event_type>
+                  data: <json_data>
+                  ```
+              examples:
+                full_stream:
+                  summary: Example SSE stream
+                  value: |
+                    event: thinking
+                    data: {"content":"Let me analyze your request..."}
+
+                    event: token
+                    data: {"content":"Here"}
+
+                    event: token
+                    data: {"content":" is"}
+
+                    event: token
+                    data: {"content":" the"}
+
+                    event: token
+                    data: {"content":" solution."}
+
+                    event: done
+                    data: {"message_id":102,"session_title":"Create a Python script..."}
+        '400':
+          description: Invalid endpoint, missing session ID, or empty message
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                bad_endpoint:
+                  value: { success: false, error: "Invalid chat endpoint. Use /api/chat/{sessionId}/send" }
+                missing_message:
+                  value: { success: false, error: "Message is required" }
+        '401':
+          description: Missing or invalid authentication token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Session not found or does not belong to user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  # ════════════════════════════════════════════════════════════
+  # PROJECTS
+  # ════════════════════════════════════════════════════════════
+
+  /api/projects:
+    get:
+      tags: [Projects]
+      summary: List all projects for the current user
+      operationId: listProjects
+      responses:
+        '200':
+          description: Array of projects
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/ProjectData'
+        '401':
+          description: Missing or invalid authentication token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/project-download/{projectId}:
+    parameters:
+      - name: projectId
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Unique project identifier
+        example: proj_abc123
+
+    get:
+      tags: [Projects]
+      summary: Download a project as a ZIP file
+      operationId: downloadProject
+      description: |
+        Proxies the download request to the task executor service. Returns the
+        project files as a ZIP archive.
+
+        **Endpoint:** `GET /api/project-download/{projectId}`
+      responses:
+        '200':
+          description: ZIP file download
+          content:
+            application/zip:
+              schema:
+                type: string
+                format: binary
+          headers:
+            Content-Disposition:
+              schema:
+                type: string
+              example: 'attachment; filename="weather-scraper.zip"'
+        '400':
+          description: Invalid path format
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Missing or invalid authentication token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Project not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '502':
+          description: Failed to download from executor service
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                error: "Failed to download project from executor"
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  # ════════════════════════════════════════════════════════════
+  # TASKS
+  # ════════════════════════════════════════════════════════════
+
+  /api/tasks:
+    get:
+      tags: [Tasks]
+      summary: List all scheduled tasks for the current user
+      operationId: listTasks
+      responses:
+        '200':
+          description: Array of scheduled tasks
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/TaskData'
+        '401':
+          description: Missing or invalid authentication token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/task-cancel/{taskId}:
+    parameters:
+      - name: taskId
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Unique task identifier
+        example: task_xyz789
+
+    post:
+      tags: [Tasks]
+      summary: Cancel a scheduled task
+      operationId: cancelTask
+      description: |
+        Sends a cancel command to the task executor via WebSocket (if connected)
+        and updates the task status to "cancelled" in the database.
+
+        **Endpoint:** `POST /api/task-cancel/{taskId}`
+      responses:
+        '200':
+          description: Task cancelled
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/TaskCancelData'
+        '400':
+          description: Invalid path format
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Missing or invalid authentication token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Task not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/task-download/{taskId}:
+    parameters:
+      - name: taskId
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Unique task identifier
+        example: task_xyz789
+
+    get:
+      tags: [Tasks]
+      summary: Download a task's output file
+      operationId: downloadTaskOutput
+      description: |
+        Proxies the download request to the task executor service. Returns the
+        task's output file (e.g., CSV, JSON, or other format).
+
+        **Endpoint:** `GET /api/task-download/{taskId}`
+      responses:
+        '200':
+          description: File download
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+          headers:
+            Content-Disposition:
+              schema:
+                type: string
+              example: 'attachment; filename="weather_data.csv"'
+        '400':
+          description: Invalid path format
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Missing or invalid authentication token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Task not found or no output file available
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                task_not_found:
+                  value: { success: false, error: "Task not found" }
+                no_output:
+                  value: { success: false, error: "No output file available for this task" }
+        '502':
+          description: Failed to download from executor service
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                error: "Failed to download file from executor"
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  # ════════════════════════════════════════════════════════════
+  # TEST (Development Only)
+  # ════════════════════════════════════════════════════════════
+
+  /test/agent:
+    get:
+      tags: [Test]
+      summary: Health check — verify AI agent connectivity
+      operationId: testAgentHealth
+      security: []
+      description: |
+        Returns the configured MCP server URL and connection status.
+        **⚠️ Remove before production deployment.**
+      responses:
+        '200':
+          description: Agent health status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TestHealthData'
+
+    post:
+      tags: [Test]
+      summary: Test AI agent streaming (bypasses auth & DB)
+      operationId: testAgentChat
+      security: []
+      description: |
+        Sends a message directly to the AI agent and streams the response via SSE.
+        Bypasses authentication and database — uses hardcoded userId=1, sessionId=1.
+        **⚠️ Remove before production deployment.**
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TestChatRequest'
+      responses:
+        '200':
+          description: SSE stream of AI response events (same format as `/api/chat/{id}/send` plus a final `test_complete` event)
+          content:
+            text/event-stream:
+              schema:
+                type: string
+        '400':
+          description: Message is required
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: "message is required"
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string

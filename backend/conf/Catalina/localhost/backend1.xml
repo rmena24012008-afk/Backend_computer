@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<Context docBase="/home/vijay-zstk428/Downloads/backend1/backend/target/backend1">
+  <Resources cacheMaxSize="10240">
+    <PreResources base="/home/vijay-zstk428/Downloads/backend1/backend/target/classes" className="org.apache.catalina.webresources.DirResourceSet" webAppMount="/WEB-INF/classes"/>
+    <PostResources base="/home/vijay-zstk428/.m2/repository/com/mysql/mysql-connector-j/8.2.0/mysql-connector-j-8.2.0.jar" className="org.apache.catalina.webresources.FileResourceSet" webAppMount="/WEB-INF/lib/mysql-connector-j-8.2.0.jar"/>
+    <PostResources base="/home/vijay-zstk428/.m2/repository/com/google/protobuf/protobuf-java/3.21.9/protobuf-java-3.21.9.jar" className="org.apache.catalina.webresources.FileResourceSet" webAppMount="/WEB-INF/lib/protobuf-java-3.21.9.jar"/>
+    <PostResources base="/home/vijay-zstk428/.m2/repository/com/zaxxer/HikariCP/5.1.0/HikariCP-5.1.0.jar" className="org.apache.catalina.webresources.FileResourceSet" webAppMount="/WEB-INF/lib/HikariCP-5.1.0.jar"/>
+    <PostResources base="/home/vijay-zstk428/.m2/repository/org/slf4j/slf4j-api/1.7.36/slf4j-api-1.7.36.jar" className="org.apache.catalina.webresources.FileResourceSet" webAppMount="/WEB-INF/lib/slf4j-api-1.7.36.jar"/>
+    <PostResources base="/home/vijay-zstk428/.m2/repository/io/jsonwebtoken/jjwt-api/0.12.3/jjwt-api-0.12.3.jar" className="org.apache.catalina.webresources.FileResourceSet" webAppMount="/WEB-INF/lib/jjwt-api-0.12.3.jar"/>
+    <PostResources base="/home/vijay-zstk428/.m2/repository/io/jsonwebtoken/jjwt-impl/0.12.3/jjwt-impl-0.12.3.jar" className="org.apache.catalina.webresources.FileResourceSet" webAppMount="/WEB-INF/lib/jjwt-impl-0.12.3.jar"/>
+    <PostResources base="/home/vijay-zstk428/.m2/repository/io/jsonwebtoken/jjwt-gson/0.12.3/jjwt-gson-0.12.3.jar" className="org.apache.catalina.webresources.FileResourceSet" webAppMount="/WEB-INF/lib/jjwt-gson-0.12.3.jar"/>
+    <PostResources base="/home/vijay-zstk428/.m2/repository/com/google/code/gson/gson/2.10.1/gson-2.10.1.jar" className="org.apache.catalina.webresources.FileResourceSet" webAppMount="/WEB-INF/lib/gson-2.10.1.jar"/>
+    <PostResources base="/home/vijay-zstk428/.m2/repository/org/mindrot/jbcrypt/0.4/jbcrypt-0.4.jar" className="org.apache.catalina.webresources.FileResourceSet" webAppMount="/WEB-INF/lib/jbcrypt-0.4.jar"/>
+    <PostResources base="/home/vijay-zstk428/.m2/repository/ch/qos/logback/logback-classic/1.4.14/logback-classic-1.4.14.jar" className="org.apache.catalina.webresources.FileResourceSet" webAppMount="/WEB-INF/lib/logback-classic-1.4.14.jar"/>
+    <PostResources base="/home/vijay-zstk428/.m2/repository/ch/qos/logback/logback-core/1.4.14/logback-core-1.4.14.jar" className="org.apache.catalina.webresources.FileResourceSet" webAppMount="/WEB-INF/lib/logback-core-1.4.14.jar"/>
+  </Resources>
+</Context>

@@ -1,0 +1,1229 @@
+openapi: 3.0.3
+info:
+  title: AI Task Agent Backend API
+  description: |
+    RESTful API for the AI Task Agent application. Provides authentication, chat session management,
+    AI-powered chat with SSE streaming, project management, and scheduled task management.
+
+    ## Authentication
+    All `/api/*` endpoints (except `/api/auth/login` and `/api/auth/register`) require a valid JWT token
+    passed via the `Authorization: Bearer <token>` header, or as a `?token=<token>` query parameter
+    (for browser downloads).
+
+    ## Response Format
+    - **Success**: `{ "success": true, "data": <payload> }`
+    - **Error**: `{ "success": false, "error": "<message>" }`
+  version: 1.0.0
+  contact:
+    name: AI Task Agent Team
+
+servers:
+  - url: http://localhost:8080
+    description: Local development server
+
+tags:
+  - name: Authentication
+    description: User registration, login, and profile endpoints
+  - name: Chat Sessions
+    description: Create, list, and delete chat sessions
+  - name: Chat Messages
+    description: Send messages and retrieve conversation history
+  - name: Projects
+    description: List and download generated projects
+  - name: Tasks
+    description: List, cancel, and download output of scheduled tasks
+
+# ──────────────────────────────────────────────────────────────────────
+# Security Schemes
+# ──────────────────────────────────────────────────────────────────────
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT token obtained from `/api/auth/login` or `/api/auth/register`
+    TokenQuery:
+      type: apiKey
+      in: query
+      name: token
+      description: JWT token passed as query parameter (for browser downloads that cannot set headers)
+
+  # ────────────────────────────────────────────────────────────────────
+  # Reusable Schemas
+  # ────────────────────────────────────────────────────────────────────
+  schemas:
+    # ── Standard Response Wrappers ──
+    SuccessResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          type: object
+      required:
+        - success
+        - data
+
+    ErrorResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: false
+        error:
+          type: string
+          example: "Error message describing what went wrong"
+      required:
+        - success
+        - error
+
+    # ── Auth Schemas ──
+    LoginRequest:
+      type: object
+      required:
+        - email
+        - password
+      properties:
+        email:
+          type: string
+          format: email
+          example: "user@example.com"
+        password:
+          type: string
+          format: password
+          example: "securepassword123"
+
+    RegisterRequest:
+      type: object
+      required:
+        - username
+        - email
+        - password
+      properties:
+        username:
+          type: string
+          example: "johndoe"
+        email:
+          type: string
+          format: email
+          example: "johndoe@example.com"
+        password:
+          type: string
+          format: password
+          minLength: 6
+          example: "securepassword123"
+
+    AuthResponse:
+      type: object
+      properties:
+        user_id:
+          type: integer
+          format: int64
+          example: 1
+        username:
+          type: string
+          example: "johndoe"
+        email:
+          type: string
+          format: email
+          example: "johndoe@example.com"
+        token:
+          type: string
+          description: JWT authentication token
+          example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+
+    UserProfile:
+      type: object
+      properties:
+        user_id:
+          type: integer
+          format: int64
+          example: 1
+        username:
+          type: string
+          example: "johndoe"
+        email:
+          type: string
+          format: email
+          example: "johndoe@example.com"
+
+    # ── Chat Session Schemas ──
+    CreateSessionRequest:
+      type: object
+      properties:
+        title:
+          type: string
+          description: Optional title for the new session. Defaults to "New conversation".
+          example: "Help with Python script"
+          default: "New conversation"
+
+    ChatSessionSummary:
+      type: object
+      properties:
+        session_id:
+          type: integer
+          format: int64
+          example: 42
+        title:
+          type: string
+          example: "Help with Python script"
+        created_at:
+          type: string
+          format: date-time
+          example: "2025-01-15T10:30:00.000+00:00"
+        updated_at:
+          type: string
+          format: date-time
+          example: "2025-01-15T11:00:00.000+00:00"
+
+    ChatSessionCreated:
+      type: object
+      properties:
+        session_id:
+          type: integer
+          format: int64
+          example: 42
+        title:
+          type: string
+          example: "New conversation"
+        created_at:
+          type: string
+          format: date-time
+          example: "2025-01-15T10:30:00.000+00:00"
+
+    # ── Chat Message Schemas ──
+    SendMessageRequest:
+      type: object
+      required:
+        - message
+      properties:
+        message:
+          type: string
+          description: The user's chat message to send to the AI assistant
+          example: "Write a Python function to sort a list"
+
+    ChatMessageItem:
+      type: object
+      properties:
+        message_id:
+          type: integer
+          format: int64
+          example: 101
+        role:
+          type: string
+          enum:
+            - user
+            - assistant
+          example: "user"
+        content:
+          type: string
+          example: "Write a Python function to sort a list"
+        tool_calls:
+          oneOf:
+            - type: array
+              items:
+                type: object
+            - type: "null"
+          nullable: true
+          description: JSON array of tool calls made by the assistant, or null
+          example: null
+        created_at:
+          type: string
+          format: date-time
+          example: "2025-01-15T10:31:00.000+00:00"
+
+    # ── SSE Event Schemas ──
+    SseTokenEvent:
+      type: object
+      description: "SSE event type: `token` — A streamed content token from the AI"
+      properties:
+        content:
+          type: string
+          example: "Here is"
+
+    SseToolStartEvent:
+      type: object
+      description: "SSE event type: `tool_start` — Indicates a tool invocation has started"
+      properties:
+        tool_name:
+          type: string
+          example: "web_search"
+
+    SseToolResultEvent:
+      type: object
+      description: "SSE event type: `tool_result` — Result data from a tool invocation"
+      properties:
+        tool_name:
+          type: string
+          example: "web_search"
+        result:
+          type: object
+
+    SseDoneEvent:
+      type: object
+      description: "SSE event type: `done` — Final event signaling the response is complete"
+      properties:
+        message_id:
+          type: integer
+          format: int64
+          example: 102
+        session_title:
+          type: string
+          example: "Write a Python function to sort..."
+
+    SseErrorEvent:
+      type: object
+      description: "SSE event type: `error` — An error occurred during streaming"
+      properties:
+        error:
+          type: string
+          example: "Something went wrong. Please try again."
+
+    # ── Project Schemas ──
+    ProjectItem:
+      type: object
+      properties:
+        project_id:
+          type: string
+          example: "proj_abc123"
+        name:
+          type: string
+          example: "my-python-app"
+        description:
+          type: string
+          example: "A Python web application with Flask"
+        files:
+          type: array
+          items:
+            type: object
+          description: JSON array of file metadata for the project
+          example:
+            - path: "app.py"
+              language: "python"
+            - path: "requirements.txt"
+              language: "text"
+        created_at:
+          type: string
+          format: date-time
+          example: "2025-01-15T10:30:00.000+00:00"
+
+    # ── Task Schemas ──
+    ScheduledTaskItem:
+      type: object
+      properties:
+        task_id:
+          type: string
+          example: "task_xyz789"
+        description:
+          type: string
+          example: "Monitor CPU usage every 30 seconds"
+        status:
+          type: string
+          enum:
+            - running
+            - completed
+            - cancelled
+            - failed
+          example: "running"
+        interval_seconds:
+          type: integer
+          example: 30
+        total_runs:
+          type: integer
+          example: 10
+        completed_runs:
+          type: integer
+          example: 4
+        output_file:
+          type: string
+          nullable: true
+          example: "cpu_report.csv"
+        started_at:
+          type: string
+          format: date-time
+          nullable: true
+          example: "2025-01-15T10:30:00.000+00:00"
+        ends_at:
+          type: string
+          format: date-time
+          nullable: true
+          example: "2025-01-15T10:35:00.000+00:00"
+        created_at:
+          type: string
+          format: date-time
+          example: "2025-01-15T10:29:00.000+00:00"
+
+    TaskCancelledResponse:
+      type: object
+      properties:
+        task_id:
+          type: string
+          example: "task_xyz789"
+        status:
+          type: string
+          example: "cancelled"
+
+    SessionDeletedResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          example: "Session deleted"
+
+# ──────────────────────────────────────────────────────────────────────
+# Global security (applied to all endpoints unless overridden)
+# ──────────────────────────────────────────────────────────────────────
+security:
+  - BearerAuth: []
+
+# ──────────────────────────────────────────────────────────────────────
+# API Paths
+# ──────────────────────────────────────────────────────────────────────
+paths:
+  # ═══════════════════════════════════════════════════════════════════
+  # AUTHENTICATION
+  # ═══════════════════════════════════════════════════════════════════
+
+  /api/auth/register:
+    post:
+      tags:
+        - Authentication
+      summary: Register a new user
+      description: |
+        Creates a new user account with username, email, and password.
+        Returns user data with a JWT token on success.
+        - Password must be at least 6 characters.
+        - Email must be valid format.
+        - Username and email must be unique.
+      operationId: registerUser
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterRequest"
+      responses:
+        "201":
+          description: User registered successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: "#/components/schemas/AuthResponse"
+        "400":
+          description: Validation error (missing fields, short password, invalid email)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                missingUsername:
+                  value:
+                    success: false
+                    error: "Username is required"
+                missingEmail:
+                  value:
+                    success: false
+                    error: "Email is required"
+                shortPassword:
+                  value:
+                    success: false
+                    error: "Password must be at least 6 characters"
+                invalidEmail:
+                  value:
+                    success: false
+                    error: "Invalid email format"
+        "409":
+          description: Username or email already exists
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                success: false
+                error: "Username or email already exists"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/auth/login:
+    post:
+      tags:
+        - Authentication
+      summary: Log in an existing user
+      description: |
+        Authenticates a user with email and password.
+        Returns user data with a JWT token on success.
+      operationId: loginUser
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: "#/components/schemas/AuthResponse"
+        "400":
+          description: Validation error (missing fields)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                missingEmail:
+                  value:
+                    success: false
+                    error: "Email is required"
+                missingPassword:
+                  value:
+                    success: false
+                    error: "Password is required"
+        "401":
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                success: false
+                error: "Invalid email or password"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/auth/me:
+    get:
+      tags:
+        - Authentication
+      summary: Get current user profile
+      description: |
+        Returns the currently authenticated user's profile information.
+        Requires a valid JWT token.
+      operationId: getCurrentUser
+      responses:
+        "200":
+          description: User profile retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: "#/components/schemas/UserProfile"
+        "401":
+          description: Missing or invalid authentication token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                missingToken:
+                  value:
+                    success: false
+                    error: "Missing authentication token"
+                invalidToken:
+                  value:
+                    success: false
+                    error: "Invalid or expired token"
+        "404":
+          description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                success: false
+                error: "User not found"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  # ═══════════════════════════════════════════════════════════════════
+  # CHAT SESSIONS
+  # ═══════════════════════════════════════════════════════════════════
+
+  /api/sessions:
+    get:
+      tags:
+        - Chat Sessions
+      summary: List all chat sessions
+      description: |
+        Returns all chat sessions for the authenticated user,
+        ordered by most recently updated.
+      operationId: listSessions
+      responses:
+        "200":
+          description: Sessions retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/ChatSessionSummary"
+        "401":
+          description: Missing or invalid authentication token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+    post:
+      tags:
+        - Chat Sessions
+      summary: Create a new chat session
+      description: |
+        Creates a new chat session for the authenticated user.
+        Optionally accepts a title; defaults to "New conversation".
+      operationId: createSession
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateSessionRequest"
+      responses:
+        "201":
+          description: Session created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: "#/components/schemas/ChatSessionCreated"
+        "401":
+          description: Missing or invalid authentication token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/sessions/{sessionId}:
+    delete:
+      tags:
+        - Chat Sessions
+      summary: Delete a chat session
+      description: |
+        Deletes a specific chat session and all its associated messages (cascade delete).
+        The session must belong to the authenticated user.
+      operationId: deleteSession
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          description: Unique identifier of the chat session
+          schema:
+            type: integer
+            format: int64
+            example: 42
+      responses:
+        "200":
+          description: Session deleted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: "#/components/schemas/SessionDeletedResponse"
+        "400":
+          description: Invalid session ID format
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Missing or invalid authentication token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Session not found or does not belong to the user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                success: false
+                error: "Session not found"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  # ═══════════════════════════════════════════════════════════════════
+  # CHAT MESSAGES
+  # ═══════════════════════════════════════════════════════════════════
+
+  /api/sessions/{sessionId}/messages:
+    get:
+      tags:
+        - Chat Messages
+      summary: Get all messages for a session
+      description: |
+        Fetches all messages (user and assistant) for a specific chat session,
+        ordered by creation time ascending. The session must belong to the authenticated user.
+      operationId: getSessionMessages
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          description: Unique identifier of the chat session
+          schema:
+            type: integer
+            format: int64
+            example: 42
+      responses:
+        "200":
+          description: Messages retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/ChatMessageItem"
+        "400":
+          description: Invalid session ID or path format
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Missing or invalid authentication token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Session not found or does not belong to the user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                success: false
+                error: "Session not found"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/chat/{sessionId}/send:
+    post:
+      tags:
+        - Chat Messages
+      summary: Send a message and stream AI response (SSE)
+      description: |
+        Sends a user message to the AI assistant and streams the response back
+        using **Server-Sent Events (SSE)**.
+
+        ### SSE Event Types
+        | Event        | Description                                      |
+        |-------------|--------------------------------------------------|
+        | `token`      | A streamed content token from the AI (partial response) |
+        | `tool_start` | Indicates a tool invocation has started           |
+        | `tool_result`| Result data from a tool invocation                |
+        | `done`       | Final event — response is complete (includes `message_id` and `session_title`) |
+        | `error`      | An error occurred during streaming                |
+
+        ### Behavior
+        1. Saves the user message to the database
+        2. Fetches conversation history for AI context
+        3. Forwards the message to the MCP Server
+        4. Proxies the MCP SSE stream back to the frontend in real-time
+        5. Saves the complete assistant response to the database
+        6. Updates the session title if it's the first message
+
+        ### Timeout
+        The async context has a **5-minute timeout** (300,000ms).
+      operationId: sendChatMessage
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          description: Unique identifier of the chat session
+          schema:
+            type: integer
+            format: int64
+            example: 42
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SendMessageRequest"
+      responses:
+        "200":
+          description: SSE stream of AI response events
+          headers:
+            Content-Type:
+              schema:
+                type: string
+                example: text/event-stream
+            Cache-Control:
+              schema:
+                type: string
+                example: no-cache
+            Connection:
+              schema:
+                type: string
+                example: keep-alive
+            X-Accel-Buffering:
+              schema:
+                type: string
+                example: "no"
+          content:
+            text/event-stream:
+              schema:
+                type: string
+                description: |
+                  Server-Sent Events stream. Each event follows the format:
+                  ```
+                  event: <eventType>
+                  data: <jsonPayload>
+                  ```
+              examples:
+                tokenEvent:
+                  summary: Token event (streamed content)
+                  value: |
+                    event: token
+                    data: {"content":"Here is"}
+
+                    event: token
+                    data: {"content":" a Python"}
+
+                    event: token
+                    data: {"content":" function:"}
+                toolEvents:
+                  summary: Tool invocation events
+                  value: |
+                    event: tool_start
+                    data: {"tool_name":"web_search","query":"python sort algorithms"}
+
+                    event: tool_result
+                    data: {"tool_name":"web_search","result":{"snippets":["..."]}}
+                doneEvent:
+                  summary: Done event (stream complete)
+                  value: |
+                    event: done
+                    data: {"message_id":102,"session_title":"Write a Python function to sort..."}
+                errorEvent:
+                  summary: Error event
+                  value: |
+                    event: error
+                    data: {"error":"Something went wrong. Please try again."}
+        "400":
+          description: Invalid endpoint, missing session ID, or empty message
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                invalidEndpoint:
+                  value:
+                    success: false
+                    error: "Invalid chat endpoint. Use /api/chat/{sessionId}/send"
+                missingSessionId:
+                  value:
+                    success: false
+                    error: "Session ID is required"
+                invalidSessionId:
+                  value:
+                    success: false
+                    error: "Invalid session ID format"
+                missingMessage:
+                  value:
+                    success: false
+                    error: "Message is required"
+        "401":
+          description: Missing or invalid authentication token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Session not found or does not belong to the user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                success: false
+                error: "Session not found"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  # ═══════════════════════════════════════════════════════════════════
+  # PROJECTS
+  # ═══════════════════════════════════════════════════════════════════
+
+  /api/projects:
+    get:
+      tags:
+        - Projects
+      summary: List all projects
+      description: |
+        Returns all projects for the authenticated user, including their file metadata.
+      operationId: listProjects
+      responses:
+        "200":
+          description: Projects retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/ProjectItem"
+        "401":
+          description: Missing or invalid authentication token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/projects/{projectId}/download:
+    get:
+      tags:
+        - Projects
+      summary: Download a project as ZIP
+      description: |
+        Downloads the specified project as a ZIP file. Proxies the download from the
+        internal Task Executor service.
+
+        Supports `?token=<jwt>` query parameter for browser downloads that cannot
+        set the `Authorization` header.
+      operationId: downloadProject
+      security:
+        - BearerAuth: []
+        - TokenQuery: []
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          description: Unique project identifier
+          schema:
+            type: string
+            example: "proj_abc123"
+        - name: token
+          in: query
+          required: false
+          description: JWT token (alternative auth for browser downloads)
+          schema:
+            type: string
+      responses:
+        "200":
+          description: ZIP file download
+          headers:
+            Content-Disposition:
+              schema:
+                type: string
+                example: 'attachment; filename="my-python-app.zip"'
+          content:
+            application/zip:
+              schema:
+                type: string
+                format: binary
+        "400":
+          description: Invalid path format
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Missing or invalid authentication token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Project not found or does not belong to the user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                success: false
+                error: "Project not found"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "502":
+          description: Failed to download from upstream executor service
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                success: false
+                error: "Failed to download project from executor"
+
+  # ═══════════════════════════════════════════════════════════════════
+  # SCHEDULED TASKS
+  # ═══════════════════════════════════════════════════════════════════
+
+  /api/tasks:
+    get:
+      tags:
+        - Tasks
+      summary: List all scheduled tasks
+      description: |
+        Returns all scheduled tasks for the authenticated user, including their
+        execution status, progress, and output file information.
+      operationId: listTasks
+      responses:
+        "200":
+          description: Tasks retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/ScheduledTaskItem"
+        "401":
+          description: Missing or invalid authentication token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/tasks/{taskId}/cancel:
+    post:
+      tags:
+        - Tasks
+      summary: Cancel a running task
+      description: |
+        Cancels a running scheduled task. Sends a cancel command via WebSocket
+        to the Task Executor service and updates the task status to "cancelled"
+        in the database. The task must belong to the authenticated user.
+      operationId: cancelTask
+      parameters:
+        - name: taskId
+          in: path
+          required: true
+          description: Unique task identifier
+          schema:
+            type: string
+            example: "task_xyz789"
+      responses:
+        "200":
+          description: Task cancelled successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: "#/components/schemas/TaskCancelledResponse"
+        "400":
+          description: Invalid path format
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Missing or invalid authentication token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Task not found or does not belong to the user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                success: false
+                error: "Task not found"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/tasks/{taskId}/download:
+    get:
+      tags:
+        - Tasks
+      summary: Download task output file
+      description: |
+        Downloads the output file generated by a completed scheduled task.
+        Proxies the file download from the internal Task Executor service.
+
+        Supports `?token=<jwt>` query parameter for browser downloads that cannot
+        set the `Authorization` header.
+      operationId: downloadTaskOutput
+      security:
+        - BearerAuth: []
+        - TokenQuery: []
+      parameters:
+        - name: taskId
+          in: path
+          required: true
+          description: Unique task identifier
+          schema:
+            type: string
+            example: "task_xyz789"
+        - name: token
+          in: query
+          required: false
+          description: JWT token (alternative auth for browser downloads)
+          schema:
+            type: string
+      responses:
+        "200":
+          description: File download
+          headers:
+            Content-Disposition:
+              schema:
+                type: string
+                example: 'attachment; filename="cpu_report.csv"'
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        "400":
+          description: Invalid path format
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Missing or invalid authentication token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Task not found, does not belong to the user, or no output file available
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                taskNotFound:
+                  value:
+                    success: false
+                    error: "Task not found"
+                noOutput:
+                  value:
+                    success: false
+                    error: "No output file available for this task"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "502":
+          description: Failed to download from upstream executor service
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                success: false
+                error: "Failed to download file from executor"
