@@ -27,8 +27,6 @@ public class OAuthCallbackServlet extends HttpServlet {
     protected void doGet(HttpServletRequest request, HttpServletResponse response)
             throws ServletException, IOException {
         try {
-            long userId = (long) request.getAttribute("userId");
-
             String code        = request.getParameter("code");
             String state       = request.getParameter("state");
             String redirectUri = request.getParameter("redirect_uri");
@@ -46,18 +44,17 @@ public class OAuthCallbackServlet extends HttpServlet {
                 return;
             }
 
-            // Extract provider name from state (format: "providerName_timestamp")
-            String provider = null;
-            if (state != null && state.contains("_")) {
-                provider = state.substring(0, state.lastIndexOf('_'));
-            }
-            // Fallback: accept provider as a query param
-            if (provider == null || provider.isBlank()) {
-                provider = request.getParameter("provider");
-            }
+            Long userId = extractUserId(request, state);
+            String provider = extractProvider(request, state);
+
             if (provider == null || provider.isBlank()) {
                 ResponseUtil.sendError(response, 400,
-                        "Cannot determine provider from state. Expected format: 'providerName_timestamp'");
+                        "Cannot determine provider from state. Expected format: 'provider_userId_timestamp'");
+                return;
+            }
+            if (userId == null) {
+                ResponseUtil.sendError(response, 401,
+                        "Missing authenticated user context for OAuth callback");
                 return;
             }
 
@@ -140,5 +137,40 @@ public class OAuthCallbackServlet extends HttpServlet {
         } catch (Exception e) {
             ResponseUtil.sendError(response, 500, "OAuth callback error: " + e.getMessage());
         }
+    }
+
+    private static Long extractUserId(HttpServletRequest request, String state) {
+        Object userIdAttr = request.getAttribute("userId");
+        if (userIdAttr instanceof Long) {
+            return (Long) userIdAttr;
+        }
+        if (userIdAttr instanceof Number) {
+            return ((Number) userIdAttr).longValue();
+        }
+
+        if (state != null) {
+            String[] parts = state.split("_");
+            if (parts.length >= 3) {
+                try {
+                    return Long.parseLong(parts[1]);
+                } catch (NumberFormatException ignored) {
+                    // Fall through to null if state does not carry a numeric user ID.
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private static String extractProvider(HttpServletRequest request, String state) {
+        if (state != null) {
+            String[] parts = state.split("_");
+            if (parts.length >= 1 && !parts[0].isBlank()) {
+                return parts[0];
+            }
+        }
+
+        String provider = request.getParameter("provider");
+        return provider == null || provider.isBlank() ? null : provider;
     }
 }

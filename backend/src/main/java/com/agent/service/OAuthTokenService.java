@@ -30,7 +30,7 @@ public class OAuthTokenService {
         if (token.getOauthTokenLink() == null || token.getOauthTokenLink().isBlank()) {
             throw new IllegalStateException("oauth_token_link is not set for provider: " + token.getProvider());
         }
-        String state = token.getProvider() + "_" + System.currentTimeMillis();
+        String state = token.getProvider() + "_" + token.getUserId() + "_" + System.currentTimeMillis();
         return token.getOauthTokenLink()
                 + "?scope="         + encode(scope)
                 + "&client_id="     + encode(token.getClientId())

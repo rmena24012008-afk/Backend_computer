@@ -3,7 +3,9 @@ package com.agent.servlet.project;
 import com.agent.config.AppConfig;
 import com.agent.dao.ProjectDao;
 import com.agent.model.Project;
+import com.agent.util.AppLogger;
 import com.agent.util.ResponseUtil;
+import org.slf4j.Logger;
 import javax.servlet.ServletException;
 import javax.servlet.annotation.WebServlet;
 import javax.servlet.http.HttpServlet;
@@ -27,6 +29,8 @@ import java.net.URL;
  */
 @WebServlet("/api/project-download/*")
 public class ProjectDownloadServlet extends HttpServlet {
+
+    private static final Logger log = AppLogger.get(ProjectDownloadServlet.class);
 
     @Override
     protected void doGet(HttpServletRequest request, HttpServletResponse response)
@@ -75,6 +79,15 @@ public class ProjectDownloadServlet extends HttpServlet {
             conn.setRequestMethod("GET");
             conn.setConnectTimeout(10000);
             conn.setReadTimeout(60000);
+
+            // ── Forward authenticated user identity to the agent/executor ──
+            conn.setRequestProperty("X-User-Id", String.valueOf(userId));
+            String apiKey = AppConfig.get("AI_AGENT_API_KEY", "");
+            if (!apiKey.isBlank()) {
+                conn.setRequestProperty("X-API-Key", apiKey);
+            }
+            log.debug("PROJECT_DOWNLOAD — proxying to executor | userId={} | projectName={} | url={}",
+                    userId, project.getName(), downloadUrl);
 
             int statusCode = conn.getResponseCode();
             if (statusCode != 200) {

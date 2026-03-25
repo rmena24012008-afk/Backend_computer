@@ -30,6 +30,8 @@ public class AuthFilter implements Filter {
             "/api/health"
     );
 
+    private static final String OAUTH_CALLBACK_PATH = "/api/auth/oauth/callback";
+
     @Override
     public void init(FilterConfig filterConfig) throws ServletException {
         log.info("AuthFilter initialised.");
@@ -53,7 +55,11 @@ public class AuthFilter implements Filter {
             path = path.substring(contextPath.length());
         }
 
-        if (PUBLIC_PATHS.contains(path)) {
+        boolean isPublicPath = PUBLIC_PATHS.contains(path);
+        boolean isOAuthBrowserCallback = OAUTH_CALLBACK_PATH.equals(path)
+                && "GET".equalsIgnoreCase(request.getMethod());
+
+        if (isPublicPath || isOAuthBrowserCallback) {
             log.debug("AUTH SKIP — public path | path={}", path);
             chain.doFilter(req, res);
             return;

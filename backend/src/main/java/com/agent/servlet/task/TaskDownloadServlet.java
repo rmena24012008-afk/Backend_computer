@@ -3,7 +3,9 @@ package com.agent.servlet.task;
 import com.agent.config.AppConfig;
 import com.agent.dao.ScheduledTaskDao;
 import com.agent.model.ScheduledTask;
+import com.agent.util.AppLogger;
 import com.agent.util.ResponseUtil;
+import org.slf4j.Logger;
 import javax.servlet.ServletException;
 import javax.servlet.annotation.WebServlet;
 import javax.servlet.http.HttpServlet;
@@ -27,6 +29,8 @@ import java.net.URL;
  */
 @WebServlet("/api/task-download/*")
 public class TaskDownloadServlet extends HttpServlet {
+
+    private static final Logger log = AppLogger.get(TaskDownloadServlet.class);
 
     @Override
     protected void doGet(HttpServletRequest request, HttpServletResponse response)
@@ -75,6 +79,15 @@ public class TaskDownloadServlet extends HttpServlet {
             conn.setRequestMethod("GET");
             conn.setConnectTimeout(10000);
             conn.setReadTimeout(60000);
+
+            // ── Forward authenticated user identity to the agent/executor ──
+            conn.setRequestProperty("X-User-Id", String.valueOf(userId));
+            String apiKey = AppConfig.get("AI_AGENT_API_KEY", "");
+            if (!apiKey.isBlank()) {
+                conn.setRequestProperty("X-API-Key", apiKey);
+            }
+            log.debug("TASK_DOWNLOAD — proxying to executor | userId={} | taskId={} | url={}",
+                    userId, taskId, downloadUrl);
 
             int statusCode = conn.getResponseCode();
             if (statusCode != 200) {

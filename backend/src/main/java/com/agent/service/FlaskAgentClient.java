@@ -59,6 +59,12 @@ public class FlaskAgentClient {
         conn.setRequestMethod("POST");
         conn.setRequestProperty("Content-Type", "application/json");
         conn.setRequestProperty("Accept", "text/event-stream");
+        // ── New headers for AI Agent authentication ──
+        conn.setRequestProperty("X-User-Id", String.valueOf(userId));
+        String apiKey = AppConfig.get("AI_AGENT_API_KEY", "");
+        if (!apiKey.isBlank()) {
+            conn.setRequestProperty("X-API-Key", apiKey);
+        }
         conn.setDoOutput(true);
         conn.setConnectTimeout(10000);    // 10 second connect timeout
         conn.setReadTimeout(300000);      // 5 minute read timeout for long AI responses
