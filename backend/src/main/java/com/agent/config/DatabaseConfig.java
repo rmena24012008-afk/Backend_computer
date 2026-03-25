@@ -34,11 +34,11 @@ public class DatabaseConfig {
             config.setDriverClassName("com.mysql.cj.jdbc.Driver");
 
             // Pool configuration
-            config.setMaximumPoolSize(10);
-            config.setMinimumIdle(2);
-            config.setIdleTimeout(300000);        // 5 minutes
-            config.setMaxLifetime(600000);        // 10 minutes
-            config.setConnectionTimeout(10000);   // 10 seconds
+            config.setMaximumPoolSize(35);
+            config.setMinimumIdle(10);
+            config.setIdleTimeout(300000);
+            config.setMaxLifetime(1500000);
+            config.setConnectionTimeout(10000);
 
             // Performance optimizations
             config.addDataSourceProperty("cachePrepStmts", "true");
