@@ -57,7 +57,7 @@ public class AppConfig {
     public static final String TASK_EXECUTOR_WS_URL = get("TASK_EXECUTOR_WS_URL", "ws://localhost:6000/ws");
 
     // ── CORS ────────────────────────────────────────────────────────────
-    public static final String FRONTEND_ORIGIN = get("FRONTEND_ORIGIN", "http://localhost:5173");
+    public static final String FRONTEND_ORIGIN = get("FRONTEND_ORIGIN", "*");
 
     /**
      * Resolve a configuration value using the priority chain:
