@@ -25,8 +25,10 @@ public class ApiIndexServlet extends HttpServlet {
                 "/api/auth/login",
                 "/api/auth/me",
                 "/api/auth/preferences",
+                "/api/auth/theme",
                 "/api/auth/oauth/link",
-                "/api/auth/oauth/callback"
+                "/api/auth/oauth/callback",
+                "/api/auth/oauth/zoho/init"
         ));
 
         ResponseUtil.sendSuccess(response, data);

@@ -33,13 +33,17 @@ public class DatabaseConfig {
             config.setPassword(AppConfig.DB_PASSWORD);
             config.setDriverClassName("com.mysql.cj.jdbc.Driver");
 
-            // Pool configuration — sized for 31+ concurrent threads + SSE proxies
-            config.setMaximumPoolSize(50);
-            config.setMinimumIdle(15);
-            config.setIdleTimeout(300000);
-            config.setMaxLifetime(1500000);
-            config.setConnectionTimeout(30000);       // 30s wait under load (was 10s)
-            config.setLeakDetectionThreshold(60000);  // warn if connection held > 60s
+            // Pool configuration — configurable for Render / container deployments.
+            config.setMaximumPoolSize(parseInt("DB_MAX_POOL_SIZE", 30));
+            config.setMinimumIdle(parseInt("DB_MIN_IDLE", 10));
+            config.setIdleTimeout(parseLong("DB_IDLE_TIMEOUT_MS", 300000L));
+            config.setMaxLifetime(parseLong("DB_MAX_LIFETIME_MS", 1500000L));
+            config.setConnectionTimeout(parseLong("DB_CONNECTION_TIMEOUT_MS", 30000L));
+            config.setLeakDetectionThreshold(parseLong("DB_LEAK_DETECTION_MS", 60000L));
+            config.setValidationTimeout(parseLong("DB_VALIDATION_TIMEOUT_MS", 5000L));
+            config.setKeepaliveTime(parseLong("DB_KEEPALIVE_TIME_MS", 120000L));
+            config.setInitializationFailTimeout(parseLong("DB_INIT_FAIL_TIMEOUT_MS", 1L));
+            config.setPoolName("agent-backend-hikari");
 
             // Performance optimizations
             config.addDataSourceProperty("cachePrepStmts", "true");
@@ -67,6 +71,22 @@ public class DatabaseConfig {
         if (dataSource != null && !dataSource.isClosed()) {
             dataSource.close();
             dataSource = null;
+        }
+    }
+
+    private static int parseInt(String key, int defaultValue) {
+        try {
+            return Integer.parseInt(AppConfig.get(key, String.valueOf(defaultValue)));
+        } catch (NumberFormatException e) {
+            return defaultValue;
+        }
+    }
+
+    private static long parseLong(String key, long defaultValue) {
+        try {
+            return Long.parseLong(AppConfig.get(key, String.valueOf(defaultValue)));
+        } catch (NumberFormatException e) {
+            return defaultValue;
         }
     }
 }

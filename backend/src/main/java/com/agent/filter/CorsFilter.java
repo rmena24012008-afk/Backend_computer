@@ -41,8 +41,8 @@ public class CorsFilter implements Filter {
         if (!origin.isEmpty() && AppConfig.ALLOWED_ORIGINS.contains(origin)) {
             response.setHeader("Access-Control-Allow-Origin", origin);
             response.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
-            response.setHeader("Access-Control-Allow-Headers",
-                    "Content-Type, Authorization, Cache-Control, X-Requested-With");
+            response.setHeader("Access-Control-Allow-Headers","*");
+//                    "Content-Type, Authorization, Cache-Control, X-Requested-With");
             response.setHeader("Access-Control-Allow-Credentials", "true");
             response.setHeader("Access-Control-Expose-Headers", "Content-Disposition");
             // Cache preflight result for 1 hour to reduce OPTIONS round-trips

@@ -111,7 +111,7 @@ public class RegisterServlet extends HttpServlet {
             data.put("user_id",  userId);
             data.put("username", username);
             data.put("email",    email);
-            // data.put("token",    token);
+            data.put("token",    token);
 
             log.info("REGISTER success | userId={} | username={} | email={} | ip={}",
                     userId, username, email, ip);

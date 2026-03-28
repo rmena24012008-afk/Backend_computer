@@ -1,5 +1,6 @@
 package com.agent.servlet.chat;
 
+import com.agent.config.AppConfig;
 import com.agent.dao.MessageDao;
 import com.agent.dao.ScheduledTaskDao;
 import com.agent.dao.SessionDao;
@@ -23,6 +24,11 @@ import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 /**
  * POST /api/chat/{sessionId}/send — Send a chat message and stream AI response via SSE.
  *
@@ -39,6 +45,19 @@ import java.util.List;
 public class ChatServlet extends HttpServlet {
 
     private static final Logger log = AppLogger.get(ChatServlet.class);
+    private static final ExecutorService CHAT_STREAM_EXECUTOR = new ThreadPoolExecutor(
+            parseInt("CHAT_STREAM_EXECUTOR_CORE_THREADS", 16),
+            parseInt("CHAT_STREAM_EXECUTOR_MAX_THREADS", 64),
+            60L,
+            TimeUnit.SECONDS,
+            new LinkedBlockingQueue<>(parseInt("CHAT_STREAM_EXECUTOR_QUEUE_SIZE", 200)),
+            r -> {
+                Thread t = new Thread(r, "chat-stream");
+                t.setDaemon(true);
+                return t;
+            },
+            new ThreadPoolExecutor.AbortPolicy()
+    );
 
     @Override
     protected void doPost(HttpServletRequest request, HttpServletResponse response)
@@ -131,16 +150,16 @@ public class ChatServlet extends HttpServlet {
             response.setHeader("Cache-Control", "no-cache");
             response.setHeader("Connection", "keep-alive");
             response.setHeader("X-Accel-Buffering", "no");
-            response.flushBuffer();
-
-            // 8. Forward to Flask Agent Server in a separate thread (non-blocking)
-            Thread streamThread = new Thread(() -> {
+            // 8. Forward to Flask Agent Server using a bounded executor
+            Runnable streamTask = () -> {
                 long streamStart = System.currentTimeMillis();
                 log.info("CHAT STREAM START | userId={} | sessionId={} | thread={}",
                         userId, sessionId, Thread.currentThread().getName());
 
                 try {
                     PrintWriter writer = response.getWriter();
+                    response.setStatus(HttpServletResponse.SC_OK);
+                    response.flushBuffer();
                     StringBuilder fullResponse = new StringBuilder();
                     // Capture the done payload for schedule_task detection
                     final JsonObject[] donePayloadHolder = new JsonObject[1];
@@ -243,10 +262,15 @@ public class ChatServlet extends HttpServlet {
                         }
                     }
                 }
-            });
-            streamThread.setName("chat-stream-" + sessionId);
-            streamThread.setDaemon(true);
-            streamThread.start();
+            };
+
+            try {
+                CHAT_STREAM_EXECUTOR.execute(streamTask);
+            } catch (RejectedExecutionException e) {
+                log.warn("CHAT — executor saturated | userId={} | sessionId={}", userId, sessionId);
+                ResponseUtil.sendError(response, 503, "Chat server is busy. Please retry.");
+                asyncContext.complete();
+            }
 
         } catch (Exception e) {
             log.error("CHAT — unexpected error | error={}", e.getMessage(), e);
@@ -366,6 +390,19 @@ public class ChatServlet extends HttpServlet {
         } catch (Exception e) {
             log.error("CHAT — error detecting scheduled tasks in done payload | error={}",
                     e.getMessage(), e);
+        }
+    }
+
+    @Override
+    public void destroy() {
+        CHAT_STREAM_EXECUTOR.shutdownNow();
+    }
+
+    private static int parseInt(String key, int defaultValue) {
+        try {
+            return Integer.parseInt(AppConfig.get(key, String.valueOf(defaultValue)));
+        } catch (NumberFormatException e) {
+            return defaultValue;
         }
     }
 }
