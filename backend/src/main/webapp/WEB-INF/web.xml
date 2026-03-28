@@ -38,6 +38,20 @@
     </filter-mapping>
 
     <filter>
+        <filter-name>AuthPathAliasFilter</filter-name>
+        <filter-class>com.agent.filter.AuthPathAliasFilter</filter-class>
+        <async-supported>true</async-supported>
+    </filter>
+    <filter-mapping>
+        <filter-name>AuthPathAliasFilter</filter-name>
+        <url-pattern>/auth</url-pattern>
+    </filter-mapping>
+    <filter-mapping>
+        <filter-name>AuthPathAliasFilter</filter-name>
+        <url-pattern>/auth/*</url-pattern>
+    </filter-mapping>
+
+    <filter>
         <filter-name>ApiPathNormalizationFilter</filter-name>
         <filter-class>com.agent.filter.ApiPathNormalizationFilter</filter-class>
         <async-supported>true</async-supported>
@@ -63,5 +77,93 @@
 
     <!-- ── v1.2 OAuth token exchange servlets ─────────────────────────── -->
 
+    <servlet>
+        <servlet-name>ApiIndexServlet</servlet-name>
+        <servlet-class>com.agent.servlet.ApiIndexServlet</servlet-class>
+    </servlet>
+    <servlet-mapping>
+        <servlet-name>ApiIndexServlet</servlet-name>
+        <url-pattern>/api</url-pattern>
+    </servlet-mapping>
+    <servlet-mapping>
+        <servlet-name>ApiIndexServlet</servlet-name>
+        <url-pattern>/api/</url-pattern>
+    </servlet-mapping>
+
+    <servlet>
+        <servlet-name>AuthIndexServlet</servlet-name>
+        <servlet-class>com.agent.servlet.auth.AuthIndexServlet</servlet-class>
+    </servlet>
+    <servlet-mapping>
+        <servlet-name>AuthIndexServlet</servlet-name>
+        <url-pattern>/api/auth</url-pattern>
+    </servlet-mapping>
+    <servlet-mapping>
+        <servlet-name>AuthIndexServlet</servlet-name>
+        <url-pattern>/api/auth/</url-pattern>
+    </servlet-mapping>
+
+    <servlet>
+        <servlet-name>LoginServlet</servlet-name>
+        <servlet-class>com.agent.servlet.auth.LoginServlet</servlet-class>
+    </servlet>
+    <servlet-mapping>
+        <servlet-name>LoginServlet</servlet-name>
+        <url-pattern>/api/auth/login</url-pattern>
+    </servlet-mapping>
+
+    <servlet>
+        <servlet-name>RegisterServlet</servlet-name>
+        <servlet-class>com.agent.servlet.auth.RegisterServlet</servlet-class>
+    </servlet>
+    <servlet-mapping>
+        <servlet-name>RegisterServlet</servlet-name>
+        <url-pattern>/api/auth/register</url-pattern>
+    </servlet-mapping>
+
+    <servlet>
+        <servlet-name>MeServlet</servlet-name>
+        <servlet-class>com.agent.servlet.auth.MeServlet</servlet-class>
+    </servlet>
+    <servlet-mapping>
+        <servlet-name>MeServlet</servlet-name>
+        <url-pattern>/api/auth/me</url-pattern>
+    </servlet-mapping>
+
+    <servlet>
+        <servlet-name>PreferencesServlet</servlet-name>
+        <servlet-class>com.agent.servlet.auth.PreferencesServlet</servlet-class>
+    </servlet>
+    <servlet-mapping>
+        <servlet-name>PreferencesServlet</servlet-name>
+        <url-pattern>/api/auth/preferences</url-pattern>
+    </servlet-mapping>
+
+    <servlet>
+        <servlet-name>OAuthLinkServlet</servlet-name>
+        <servlet-class>com.agent.servlet.auth.OAuthLinkServlet</servlet-class>
+    </servlet>
+    <servlet-mapping>
+        <servlet-name>OAuthLinkServlet</servlet-name>
+        <url-pattern>/api/auth/oauth/link</url-pattern>
+    </servlet-mapping>
+
+    <servlet>
+        <servlet-name>OAuthCallbackServlet</servlet-name>
+        <servlet-class>com.agent.servlet.auth.OAuthCallbackServlet</servlet-class>
+    </servlet>
+    <servlet-mapping>
+        <servlet-name>OAuthCallbackServlet</servlet-name>
+        <url-pattern>/api/auth/oauth/callback</url-pattern>
+    </servlet-mapping>
+
+    <servlet>
+        <servlet-name>ZohoOAuthInitServlet</servlet-name>
+        <servlet-class>com.agent.servlet.auth.ZohoOAuthInitServlet</servlet-class>
+    </servlet>
+    <servlet-mapping>
+        <servlet-name>ZohoOAuthInitServlet</servlet-name>
+        <url-pattern>/api/auth/oauth/zoho/init</url-pattern>
+    </servlet-mapping>
 
 </web-app>

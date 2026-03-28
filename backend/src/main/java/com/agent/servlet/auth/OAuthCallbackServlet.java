@@ -1,15 +1,15 @@
 package com.agent.servlet.auth;
 
-import com.agent.dao.AuthTokenDao;
 import com.agent.model.AuthToken;
 import com.agent.service.OAuthTokenService;
+import com.agent.util.JsonUtil;
 import com.agent.util.ResponseUtil;
+import com.google.gson.JsonObject;
+
 import javax.servlet.ServletException;
-import javax.servlet.annotation.WebServlet;
 import javax.servlet.http.HttpServlet;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
-
 import java.io.IOException;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -20,7 +20,6 @@ import java.util.Map;
  * This servlet receives the OAuth2 authorization code from the provider
  * redirect and exchanges it for access + refresh tokens.
  */
-@WebServlet("/api/auth/oauth/callback")
 public class OAuthCallbackServlet extends HttpServlet {
 
     @Override
@@ -68,11 +67,13 @@ public class OAuthCallbackServlet extends HttpServlet {
                     userId, provider, code, redirectUri);
 
             Map<String, Object> data = new LinkedHashMap<>();
-            data.put("provider", exchanged.getProvider());
-            data.put("status", "tokens_exchanged");
-            data.put("has_access_token", exchanged.getAccessToken() != null);
+            data.put("provider",          exchanged.getProvider());
+            data.put("status",            "tokens_exchanged");
+            data.put("header_type",       exchanged.getHeaderType());
+            data.put("access_token",      exchanged.getAccessToken());
             data.put("has_refresh_token", exchanged.getRefreshToken() != null);
-            data.put("expires_at", exchanged.getExpiresAt() != null ? exchanged.getExpiresAt().toString() : null);
+            data.put("expires_at",        exchanged.getExpiresAt() != null ? exchanged.getExpiresAt().toString() : null);
+            data.put("scope",             exchanged.getScope());
 
             ResponseUtil.sendSuccess(response, data);
 
@@ -89,7 +90,7 @@ public class OAuthCallbackServlet extends HttpServlet {
     protected void doPost(HttpServletRequest request, HttpServletResponse response)
             throws ServletException, IOException {
         try {
-            long userId = (long) request.getAttribute("userId");
+            long userId = ((Number) request.getAttribute("userId")).longValue();
 
             String body = new String(request.getInputStream().readAllBytes());
             if (body == null || body.isBlank()) {
@@ -97,9 +98,9 @@ public class OAuthCallbackServlet extends HttpServlet {
                 return;
             }
 
-            com.google.gson.JsonObject json;
+            JsonObject json;
             try {
-                json = com.agent.util.JsonUtil.parse(body);
+                json = JsonUtil.parse(body);
             } catch (Exception e) {
                 ResponseUtil.sendError(response, 400, "Invalid JSON body");
                 return;

@@ -20,10 +20,6 @@ public class JwtService {
     private static final String SECRET = AppConfig.JWT_SECRET;
     private static final long EXPIRATION_MS = 24 * 60 * 60 * 1000; // 24 hours
 
-    private static final SecretKey KEY = Keys.hmacShaKeyFor(
-            SECRET.getBytes(StandardCharsets.UTF_8)
-    );
-
     /**
      * Generate a JWT token for a given user.
      *
@@ -37,7 +33,7 @@ public class JwtService {
                 .claim("email", user.getEmail())
                 .issuedAt(new Date())
                 .expiration(new Date(System.currentTimeMillis() + EXPIRATION_MS))
-                .signWith(KEY)
+                .signWith(getSigningKey())
                 .compact();
     }
 
@@ -50,9 +46,14 @@ public class JwtService {
      */
     public static Claims validateToken(String token) {
         return Jwts.parser()
-                .verifyWith(KEY)
+                .verifyWith(getSigningKey())
                 .build()
                 .parseSignedClaims(token)
                 .getPayload();
+    }
+
+    private static SecretKey getSigningKey() {
+        String secret = AppConfig.requireSecret("JWT_SECRET", SECRET, 32);
+        return Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
     }
 }

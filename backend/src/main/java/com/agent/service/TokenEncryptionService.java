@@ -50,7 +50,7 @@ public final class TokenEncryptionService {
 
     // ── Key (derived once at class-load time) ─────────────────────────────────
 
-    private static final SecretKey SECRET_KEY = deriveKey(AppConfig.ENCRYPTION_SECRET);
+    private static volatile SecretKey secretKey;
 
     // ── Private constructor — static utility class ────────────────────────────
 
@@ -78,7 +78,7 @@ public final class TokenEncryptionService {
 
             Cipher cipher = Cipher.getInstance(ALGORITHM);
             GCMParameterSpec spec = new GCMParameterSpec(GCM_TAG_LENGTH, iv);
-            cipher.init(Cipher.ENCRYPT_MODE, SECRET_KEY, spec);
+            cipher.init(Cipher.ENCRYPT_MODE, getSecretKey(), spec);
 
             byte[] cipherBytes = cipher.doFinal(plainText.getBytes(StandardCharsets.UTF_8));
 
@@ -114,7 +114,7 @@ public final class TokenEncryptionService {
 
             Cipher cipher = Cipher.getInstance(ALGORITHM);
             GCMParameterSpec spec = new GCMParameterSpec(GCM_TAG_LENGTH, iv);
-            cipher.init(Cipher.DECRYPT_MODE, SECRET_KEY, spec);
+            cipher.init(Cipher.DECRYPT_MODE, getSecretKey(), spec);
 
             byte[] decrypted = cipher.doFinal(cipherText);
             return new String(decrypted, StandardCharsets.UTF_8);
@@ -141,5 +141,20 @@ public final class TokenEncryptionService {
         } catch (Exception e) {
             throw new RuntimeException("TokenEncryptionService: key derivation failed", e);
         }
+    }
+
+    private static SecretKey getSecretKey() {
+        SecretKey localKey = secretKey;
+        if (localKey == null) {
+            synchronized (TokenEncryptionService.class) {
+                localKey = secretKey;
+                if (localKey == null) {
+                    String secret = AppConfig.requireSecret("ENCRYPTION_SECRET", AppConfig.ENCRYPTION_SECRET, 16);
+                    localKey = deriveKey(secret);
+                    secretKey = localKey;
+                }
+            }
+        }
+        return localKey;
     }
 }

@@ -3,11 +3,11 @@ package com.agent.servlet.auth;
 import com.agent.dao.AuthTokenDao;
 import com.agent.model.AuthToken;
 import com.agent.service.OAuthTokenService;
+import com.agent.service.ZohoOAuthService;
 import com.agent.util.JsonUtil;
 import com.agent.util.ResponseUtil;
 import com.google.gson.JsonObject;
 import javax.servlet.ServletException;
-import javax.servlet.annotation.WebServlet;
 import javax.servlet.http.HttpServlet;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
@@ -24,7 +24,7 @@ import java.util.Map;
  * PUT    /api/auth/oauth/link — Force-refresh an access token
  * DELETE /api/auth/oauth/link — Unlink a provider
  */
-@WebServlet("/api/auth/oauth/link")
+ 
 public class OAuthLinkServlet extends HttpServlet {
 
     /* ── POST: Save credentials, return authorization URL ── */
@@ -32,7 +32,7 @@ public class OAuthLinkServlet extends HttpServlet {
     protected void doPost(HttpServletRequest request, HttpServletResponse response)
             throws ServletException, IOException {
         try {
-            long userId = (long) request.getAttribute("userId");
+            long userId = ((Number) request.getAttribute("userId")).longValue();
 
             String body = new String(request.getInputStream().readAllBytes());
             if (body == null || body.isBlank()) {
@@ -111,7 +111,7 @@ public class OAuthLinkServlet extends HttpServlet {
     protected void doGet(HttpServletRequest request, HttpServletResponse response)
             throws ServletException, IOException {
         try {
-            long userId = (long) request.getAttribute("userId");
+            long userId = ((Number) request.getAttribute("userId")).longValue();
             List<AuthToken> tokens = AuthTokenDao.findByUser(userId);
 
             List<Map<String, Object>> result = new ArrayList<>();
@@ -141,7 +141,7 @@ public class OAuthLinkServlet extends HttpServlet {
     protected void doPut(HttpServletRequest request, HttpServletResponse response)
             throws ServletException, IOException {
         try {
-            long userId = (long) request.getAttribute("userId");
+            long userId = ((Number) request.getAttribute("userId")).longValue();
 
             String body = new String(request.getInputStream().readAllBytes());
             if (body == null || body.isBlank()) {
@@ -164,12 +164,23 @@ public class OAuthLinkServlet extends HttpServlet {
                 return;
             }
 
-            AuthToken refreshed = OAuthTokenService.refreshAccessToken(userId, provider);
+            // Delegate to the Zoho-specific refresh for the "zoho" provider so that
+            // the correct token endpoint and header type are always used.
+            AuthToken refreshed;
+            if (ZohoOAuthService.PROVIDER.equalsIgnoreCase(provider)) {
+                refreshed = ZohoOAuthService.refreshZohoToken(userId);
+            } else {
+                refreshed = OAuthTokenService.refreshAccessToken(userId, provider);
+            }
 
             Map<String, Object> data = new LinkedHashMap<>();
-            data.put("provider", refreshed.getProvider());
-            data.put("status", "refreshed");
-            data.put("expires_at", refreshed.getExpiresAt() != null ? refreshed.getExpiresAt().toString() : null);
+            data.put("provider",     refreshed.getProvider());
+            data.put("status",       "refreshed");
+            data.put("access_token", refreshed.getAccessToken());
+            data.put("header_type",  refreshed.getHeaderType());
+            data.put("expires_at",   refreshed.getExpiresAt() != null
+                    ? refreshed.getExpiresAt().toString() : null);
+            data.put("scope",        refreshed.getScope());
 
             ResponseUtil.sendSuccess(response, data);
 
@@ -183,7 +194,7 @@ public class OAuthLinkServlet extends HttpServlet {
     protected void doDelete(HttpServletRequest request, HttpServletResponse response)
             throws ServletException, IOException {
         try {
-            long userId  = (long) request.getAttribute("userId");
+            long userId  = ((Number) request.getAttribute("userId")).longValue();
             String provider = request.getParameter("provider");
 
             if (provider == null || provider.isBlank()) {

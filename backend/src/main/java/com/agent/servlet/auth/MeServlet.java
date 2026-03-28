@@ -5,7 +5,6 @@ import com.agent.model.User;
 import com.agent.util.ResponseUtil;
 import com.google.gson.JsonObject;
 import javax.servlet.ServletException;
-import javax.servlet.annotation.WebServlet;
 import javax.servlet.http.HttpServlet;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
@@ -45,7 +44,6 @@ import java.util.Map;
  * }
  * }</pre>
  */
-@WebServlet("/api/auth/me")
 public class MeServlet extends HttpServlet {
 
     @Override
@@ -54,7 +52,7 @@ public class MeServlet extends HttpServlet {
 
         try {
             // AuthFilter has already validated JWT and set userId attribute
-            long userId = (long) request.getAttribute("userId");
+            long userId = ((Number) request.getAttribute("userId")).longValue();
 
             User user = UserDao.findById(userId);
             if (user == null) {

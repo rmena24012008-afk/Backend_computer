@@ -42,8 +42,9 @@ public class AuthTokenDao {
         String sql = """
                 INSERT INTO auth_tokens
                     (user_id, provider, header_type, access_token, refresh_token,
-                     expires_at, client_id, client_secret, token_endpoint, oauth_token_link)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     expires_at, client_id, client_secret, token_endpoint, oauth_token_link,
+                     scope)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON DUPLICATE KEY UPDATE
                     header_type      = VALUES(header_type),
                     access_token     = VALUES(access_token),
@@ -52,7 +53,8 @@ public class AuthTokenDao {
                     client_id        = VALUES(client_id),
                     client_secret    = VALUES(client_secret),
                     token_endpoint   = VALUES(token_endpoint),
-                    oauth_token_link = VALUES(oauth_token_link)
+                    oauth_token_link = VALUES(oauth_token_link),
+                    scope            = VALUES(scope)
                 """;
 
         try (Connection conn = DatabaseConfig.getConnection();
@@ -68,6 +70,7 @@ public class AuthTokenDao {
             stmt.setString(8, TokenEncryptionService.encrypt(token.getClientSecret()));   // 🔒
             stmt.setString(9, token.getTokenEndpoint());
             stmt.setString(10, token.getOauthTokenLink());
+            stmt.setString(11, token.getScope());
 
             stmt.executeUpdate();
 
@@ -197,6 +200,7 @@ public class AuthTokenDao {
         token.setClientSecret(TokenEncryptionService.decrypt(rs.getString("client_secret")));  // 🔓
         token.setTokenEndpoint(rs.getString("token_endpoint"));
         token.setOauthTokenLink(rs.getString("oauth_token_link"));
+        token.setScope(rs.getString("scope"));
         token.setUpdatedAt(rs.getTimestamp("updated_at"));
         return token;
     }

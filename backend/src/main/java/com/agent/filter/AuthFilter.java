@@ -55,6 +55,13 @@ public class AuthFilter implements Filter {
             path = path.substring(contextPath.length());
         }
 
+        // Internal webhook endpoints are secured by IP, not JWT
+        if (path.startsWith("/internal/")) {
+            log.debug("AUTH SKIP — internal webhook path | path={}", path);
+            chain.doFilter(req, res);
+            return;
+        }
+
         boolean isPublicPath = PUBLIC_PATHS.contains(path);
         boolean isOAuthBrowserCallback = OAUTH_CALLBACK_PATH.equals(path)
                 && "GET".equalsIgnoreCase(request.getMethod());
@@ -88,10 +95,18 @@ public class AuthFilter implements Filter {
 
         try {
             Claims claims   = JwtService.validateToken(token);
+            // Explicitly store as Long — JJWT may deserialise numeric claims as Integer.
+            // Every servlet unboxes via (long) cast; a stored Integer would throw ClassCastException.
             Long   userId   = ((Number) claims.get("user_id")).longValue();
             String username = claims.get("username", String.class);
 
-            request.setAttribute("userId",   userId);
+            if (userId == null || userId <= 0) {
+                log.warn("AUTH REJECT — token missing or invalid user_id claim | path={}", path);
+                ResponseUtil.sendError(response, 401, "Invalid token: missing user identity");
+                return;
+            }
+
+            request.setAttribute("userId",   userId);   // always a Long
             request.setAttribute("username", username);
 
             log.debug("AUTH OK | userId={} | username={} | path={}", userId, username, path);

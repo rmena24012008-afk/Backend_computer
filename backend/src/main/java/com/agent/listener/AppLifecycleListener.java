@@ -30,10 +30,22 @@ public class AppLifecycleListener implements ServletContextListener {
 
     @Override
     public void contextInitialized(ServletContextEvent sce) {
+        String contextPath = sce.getServletContext().getContextPath();
+        if (contextPath == null || "/".equals(contextPath)) {
+            contextPath = "";
+        }
+        if (System.getProperty("HEALTH_CONTEXT_PATH") == null
+                && (System.getenv("HEALTH_CONTEXT_PATH") == null
+                || System.getenv("HEALTH_CONTEXT_PATH").isBlank())) {
+            System.setProperty("HEALTH_CONTEXT_PATH", contextPath);
+        }
+
         // ── Ensure log directory exists ───────────────────────────────────
         String logDir = System.getenv("LOG_DIR");
         if (logDir == null || logDir.isBlank()) {
-            logDir = "/home/workspace/Backend/backend/logs";
+            String baseDir = System.getProperty("catalina.base",
+                    System.getProperty("user.dir", "."));
+            logDir = new File(baseDir, "logs").getAbsolutePath();
         }
         File logDirFile = new File(logDir);
         if (!logDirFile.exists()) {
@@ -47,10 +59,10 @@ public class AppLifecycleListener implements ServletContextListener {
         log.info("╔══════════════════════════════════════════════════╗");
         log.info("║        Agent Backend — STARTING UP               ║");
         log.info("╚══════════════════════════════════════════════════╝");
-        log.info("APP STARTUP | flaskAgentUrl={} | frontendOrigin={} | logDir={}",
-                AppConfig.FLASK_AGENT_URL, AppConfig.FRONTEND_ORIGIN, logDirFile.getAbsolutePath());
-        AppLogger.audit("APP_START | flaskAgentUrl={} | frontendOrigin={}",
-                AppConfig.FLASK_AGENT_URL, AppConfig.FRONTEND_ORIGIN);
+        log.info("APP STARTUP | flaskAgentUrl={} | frontendOrigin={} | contextPath={} | logDir={}",
+                AppConfig.FLASK_AGENT_URL, AppConfig.FRONTEND_ORIGIN, contextPath, logDirFile.getAbsolutePath());
+        AppLogger.audit("APP_START | flaskAgentUrl={} | frontendOrigin={} | contextPath={}",
+                AppConfig.FLASK_AGENT_URL, AppConfig.FRONTEND_ORIGIN, contextPath);
 
         // ── Start ServerHealthMonitor for auto-restart on slowdown ────────
         boolean monitorEnabled = Boolean.parseBoolean(

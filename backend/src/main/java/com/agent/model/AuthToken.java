@@ -44,6 +44,12 @@ public class AuthToken {
     private String    tokenEndpoint;
     /** Full OAuth authorization URL used to initiate / re-initiate the OAuth flow. */
     private String    oauthTokenLink;
+    /**
+     * OAuth2 scopes requested for this provider, e.g.
+     * {@code "ZohoCRM.modules.ALL,ZohoCRM.settings.READ"}.
+     * Populated at init time via the MCP server scope-resolution call.
+     */
+    private String    scope;
     /** Auto-updated timestamp tracking last token refresh. */
     private Timestamp updatedAt;
 
@@ -69,6 +75,18 @@ public class AuthToken {
         this.clientSecret   = clientSecret;
         this.tokenEndpoint  = tokenEndpoint;
         this.oauthTokenLink = oauthTokenLink;
+    }
+
+    /**
+     * Full constructor including scope — used by the Zoho OAuth init flow.
+     */
+    public AuthToken(long userId, String provider, String headerType,
+                     String accessToken, String refreshToken, Timestamp expiresAt,
+                     String clientId, String clientSecret,
+                     String tokenEndpoint, String oauthTokenLink, String scope) {
+        this(userId, provider, headerType, accessToken, refreshToken, expiresAt,
+             clientId, clientSecret, tokenEndpoint, oauthTokenLink);
+        this.scope = scope;
     }
 
     // ── Business helpers ─────────────────────────────────────────────────────
@@ -183,6 +201,14 @@ public class AuthToken {
 
     public void setOauthTokenLink(String oauthTokenLink) {
         this.oauthTokenLink = oauthTokenLink;
+    }
+
+    public String getScope() {
+        return scope;
+    }
+
+    public void setScope(String scope) {
+        this.scope = scope;
     }
 
     public Timestamp getUpdatedAt() {

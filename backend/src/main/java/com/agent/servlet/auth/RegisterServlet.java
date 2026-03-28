@@ -10,7 +10,6 @@ import com.google.gson.JsonObject;
 import org.slf4j.Logger;
 
 import javax.servlet.ServletException;
-import javax.servlet.annotation.WebServlet;
 import javax.servlet.http.HttpServlet;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
@@ -25,7 +24,6 @@ import java.util.Map;
  * Registers a new user account with username, email, and password.
  * Returns user data with a JWT token on success.
  */
-@WebServlet("/api/auth/register")
 public class RegisterServlet extends HttpServlet {
 
     private static final Logger log = AppLogger.get(RegisterServlet.class);

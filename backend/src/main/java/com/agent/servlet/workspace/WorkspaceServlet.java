@@ -157,12 +157,12 @@ proxyRequest(resp, "DELETE", agentPath, null, userId);
      */
     private long getAuthenticatedUserId(HttpServletRequest req,
                                         HttpServletResponse resp) throws IOException {
-        Long userId = (Long) req.getAttribute("userId");
-        if (userId == null) {
+        Object userIdAttr = req.getAttribute("userId");
+        if (userIdAttr == null) {
             ResponseUtil.sendError(resp, 401, "Unauthorized");
             return -1;
         }
-        return userId;
+        return ((Number) userIdAttr).longValue();
     }
 
     /**

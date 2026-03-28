@@ -37,7 +37,7 @@ public class TaskDownloadServlet extends HttpServlet {
             throws ServletException, IOException {
 
         try {
-            long userId = (long) request.getAttribute("userId");
+            long userId = ((Number) request.getAttribute("userId")).longValue();
 
             // Extract taskId from path info: /api/task-download/{taskId}
             String pathInfo = request.getPathInfo();

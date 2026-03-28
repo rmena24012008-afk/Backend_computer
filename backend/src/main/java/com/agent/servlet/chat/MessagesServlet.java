@@ -34,7 +34,7 @@ public class MessagesServlet extends HttpServlet {
             throws ServletException, IOException {
 
         try {
-            long userId = (long) request.getAttribute("userId");
+            long userId = ((Number) request.getAttribute("userId")).longValue();
 
             // Extract sessionId from path info: /api/messages/{sessionId}
             String pathInfo = request.getPathInfo();

@@ -3,7 +3,6 @@ package com.agent.servlet.auth;
 import com.agent.util.ResponseUtil;
 
 import javax.servlet.ServletException;
-import javax.servlet.annotation.WebServlet;
 import javax.servlet.http.HttpServlet;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
@@ -12,7 +11,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-@WebServlet(urlPatterns = {"/api/auth", "/api/auth/"})
 public class AuthIndexServlet extends HttpServlet {
 
     @Override
@@ -31,7 +29,8 @@ public class AuthIndexServlet extends HttpServlet {
                 "PUT /api/auth/oauth/link",
                 "DELETE /api/auth/oauth/link",
                 "GET /api/auth/oauth/callback",
-                "POST /api/auth/oauth/callback"
+                "POST /api/auth/oauth/callback",
+                "POST /api/auth/oauth/zoho/init"
         ));
 
         ResponseUtil.sendSuccess(response, data);

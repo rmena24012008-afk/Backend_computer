@@ -34,7 +34,7 @@ public class SessionsServlet extends HttpServlet {
             throws ServletException, IOException {
 
         try {
-            long userId = (long) request.getAttribute("userId");
+            long userId = ((Number) request.getAttribute("userId")).longValue();
 
             List<ChatSession> sessions = SessionDao.findByUserId(userId);
 
@@ -61,7 +61,7 @@ public class SessionsServlet extends HttpServlet {
             throws ServletException, IOException {
 
         try {
-            long userId = (long) request.getAttribute("userId");
+            long userId = ((Number) request.getAttribute("userId")).longValue();
 
             String body = new String(request.getInputStream().readAllBytes());
             String title = "New conversation";

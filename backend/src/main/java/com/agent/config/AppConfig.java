@@ -4,6 +4,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.Properties;
 
 /**
@@ -85,5 +86,31 @@ public class AppConfig {
         }
         // 4. Hardcoded fallback (non-sensitive only)
         return defaultValue;
+    }
+
+    /**
+     * Returns true when a config value is effectively unset, including the
+     * placeholder defaults used in local fallback paths.
+     */
+    public static boolean isUnset(String value) {
+        return value == null || value.isBlank() || value.startsWith("MISSING_");
+    }
+
+    /**
+     * Validates that a secret is configured and meets a minimum byte length.
+     */
+    public static String requireSecret(String key, String value, int minLengthBytes) {
+        if (isUnset(value)) {
+            throw new IllegalStateException(key + " is not configured");
+        }
+
+        int actualLength = value.getBytes(StandardCharsets.UTF_8).length;
+        if (actualLength < minLengthBytes) {
+            throw new IllegalStateException(
+                    key + " must be at least " + minLengthBytes + " bytes; got " + actualLength
+            );
+        }
+
+        return value;
     }
 }

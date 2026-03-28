@@ -31,7 +31,7 @@ public class SessionServlet extends HttpServlet {
             throws ServletException, IOException {
 
         try {
-            long userId = (long) request.getAttribute("userId");
+            long userId = ((Number) request.getAttribute("userId")).longValue();
 
             long sessionId = parseSessionId(request, response);
             if (sessionId < 0) return;
@@ -61,7 +61,7 @@ public class SessionServlet extends HttpServlet {
             throws ServletException, IOException {
 
         try {
-            long userId = (long) request.getAttribute("userId");
+            long userId = ((Number) request.getAttribute("userId")).longValue();
 
             long sessionId = parseSessionId(request, response);
             if (sessionId < 0) return;

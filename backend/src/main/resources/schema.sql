@@ -81,7 +81,7 @@ CREATE TABLE IF NOT EXISTS task_run_logs (
     FOREIGN KEY (task_id) REFERENCES scheduled_tasks(task_id) ON DELETE CASCADE
 );
 
--- ── Auth Tokens (OAuth + encrypted credentials) ── v1.1
+-- ── Auth Tokens (OAuth + encrypted credentials) ── v1.2 (Zoho)
 CREATE TABLE IF NOT EXISTS auth_tokens (
     id               BIGINT        PRIMARY KEY AUTO_INCREMENT,
     user_id          BIGINT        NOT NULL,
@@ -94,6 +94,7 @@ CREATE TABLE IF NOT EXISTS auth_tokens (
     client_secret    TEXT          DEFAULT NULL,
     token_endpoint   VARCHAR(500)  DEFAULT NULL,
     oauth_token_link VARCHAR(1000) DEFAULT NULL,
+    scope            VARCHAR(1000) DEFAULT NULL,
     updated_at       TIMESTAMP     DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
 
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
@@ -129,3 +130,12 @@ ALTER TABLE users
 -- ALTER TABLE chat_sessions DROP COLUMN summary;
 -- ALTER TABLE users DROP COLUMN preferences;
 -- DROP TABLE IF EXISTS auth_tokens;
+
+-- ============================================
+-- MIGRATION v1.2 -- Zoho OAuth scope support
+-- (Safe to run against databases created from earlier schema versions)
+-- ============================================
+
+-- Add scope column to auth_tokens (idempotent -- no-op if column already exists)
+ALTER TABLE auth_tokens
+    ADD COLUMN IF NOT EXISTS scope VARCHAR(1000) DEFAULT NULL AFTER oauth_token_link;

@@ -28,21 +28,27 @@ public class CorsFilter implements Filter {
         HttpServletResponse response = (HttpServletResponse) res;
         HttpServletRequest request = (HttpServletRequest) req;
 
-        // Validate origin against configured frontend origin
+        // Always set Vary: Origin so proxies/CDNs do not serve a CORS-less
+        // cached response to a cross-origin client.
+        response.setHeader("Vary", "Origin");
+
         String origin = request.getHeader("Origin");
         String allowedOrigin = AppConfig.FRONTEND_ORIGIN;
 
+        // Only reflect the ACAO header when the request Origin matches exactly.
+        // For same-origin requests (no Origin header) or unknown origins, omit
+        // the header entirely — the browser will block mismatched origins anyway,
+        // and this avoids leaking the allowed origin in every response.
         if (origin != null && origin.equals(allowedOrigin)) {
             response.setHeader("Access-Control-Allow-Origin", origin);
-        } else {
-            // Fallback for same-origin requests (no Origin header) or dev
-            response.setHeader("Access-Control-Allow-Origin", allowedOrigin);
+            response.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+            response.setHeader("Access-Control-Allow-Headers",
+                    "Content-Type, Authorization, Cache-Control, X-Requested-With");
+            response.setHeader("Access-Control-Allow-Credentials", "true");
+            response.setHeader("Access-Control-Expose-Headers", "Content-Disposition");
+            // Cache preflight result for 1 hour to reduce OPTIONS round-trips
+            response.setHeader("Access-Control-Max-Age", "3600");
         }
-
-        response.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
-        response.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
-        response.setHeader("Access-Control-Allow-Credentials", "true");
-        response.setHeader("Access-Control-Expose-Headers", "Content-Disposition");
 
         // Handle preflight OPTIONS requests immediately
         if ("OPTIONS".equals(request.getMethod())) {

@@ -7,7 +7,6 @@ import com.agent.util.ResponseUtil;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import javax.servlet.ServletException;
-import javax.servlet.annotation.WebServlet;
 import javax.servlet.http.HttpServlet;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
@@ -27,7 +26,6 @@ import java.util.Map;
  * <p>{@link #DEFAULT_PREFERENCES} defines the application-level fallback for
  * every preference key. Stored values always take priority over defaults.
  */
-@WebServlet("/api/auth/preferences")
 public class PreferencesServlet extends HttpServlet {
 
     // ── Application-level defaults ────────────────────────────────────────────
@@ -62,7 +60,7 @@ public class PreferencesServlet extends HttpServlet {
             throws ServletException, IOException {
 
         try {
-            long userId = (long) request.getAttribute("userId");
+            long userId = ((Number) request.getAttribute("userId")).longValue();
 
             User user = UserDao.findById(userId);
             if (user == null) {
@@ -89,7 +87,7 @@ public class PreferencesServlet extends HttpServlet {
             throws ServletException, IOException {
 
         try {
-            long userId = (long) request.getAttribute("userId");
+            long userId = ((Number) request.getAttribute("userId")).longValue();
 
             // 1. Parse request body
             String body = new String(request.getInputStream().readAllBytes()).trim();

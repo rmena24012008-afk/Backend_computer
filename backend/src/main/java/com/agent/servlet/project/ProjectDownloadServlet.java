@@ -37,7 +37,7 @@ public class ProjectDownloadServlet extends HttpServlet {
             throws ServletException, IOException {
 
         try {
-            long userId = (long) request.getAttribute("userId");
+            long userId = ((Number) request.getAttribute("userId")).longValue();
 
             // Extract projectId from path info: /api/project-download/{projectId}
             String pathInfo = request.getPathInfo();

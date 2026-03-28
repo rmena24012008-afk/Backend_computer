@@ -27,7 +27,7 @@ public class ProjectsServlet extends HttpServlet {
             throws ServletException, IOException {
 
         try {
-            long userId = (long) request.getAttribute("userId");
+            long userId = ((Number) request.getAttribute("userId")).longValue();
 
             List<Project> projects = ProjectDao.findByUserId(userId);
 
