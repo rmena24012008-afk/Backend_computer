@@ -67,6 +67,7 @@ public class MeServlet extends HttpServlet {
             data.put("user_id",     user.getId());
             data.put("username",    user.getUsername());
             data.put("email",       user.getEmail());
+            data.put("theme",       user.getTheme());
             data.put("preferences", effectivePreferences);
 
             ResponseUtil.sendSuccess(response, data);

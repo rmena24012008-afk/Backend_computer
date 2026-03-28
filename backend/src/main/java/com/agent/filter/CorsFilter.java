@@ -32,18 +32,18 @@ public class CorsFilter implements Filter {
         // cached response to a cross-origin client.
         response.setHeader("Vary", "Origin");
 
-        String origin = AppConfig.normalizeOrigin(request.getHeader("Origin"));
-//        String allowedOrigin = AppConfig.FRONTEND_ORIGIN;
+        String origin = request.getHeader("Origin");
+        String allowedOrigin = AppConfig.FRONTEND_ORIGIN;
 
         // Only reflect the ACAO header when the request Origin matches exactly.
         // For same-origin requests (no Origin header) or unknown origins, omit
         // the header entirely — the browser will block mismatched origins anyway,
         // and this avoids leaking the allowed origin in every response.
-        if (origin != null && AppConfig.ALLOWED_ORIGINS.contains(origin)) {
+        if (origin != null && origin.equals(allowedOrigin)) {
             response.setHeader("Access-Control-Allow-Origin", origin);
             response.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
-            response.setHeader("Access-Control-Allow-Headers","*");
-//                    "Content-Type, Authorization, Cache-Control, X-Requested-With,x-user-id");
+            response.setHeader("Access-Control-Allow-Headers",
+                    "Content-Type, Authorization, Cache-Control, X-Requested-With");
             response.setHeader("Access-Control-Allow-Credentials", "true");
             response.setHeader("Access-Control-Expose-Headers", "Content-Disposition");
             // Cache preflight result for 1 hour to reduce OPTIONS round-trips

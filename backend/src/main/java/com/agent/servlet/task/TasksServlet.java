@@ -155,10 +155,14 @@ public class TasksServlet extends HttpServlet {
 
     private void getSingleTask(long userId, String taskId,
                                HttpServletResponse response) throws IOException {
-        // 1. Verify ownership in MySQL
+        // 1. Verify task exists and check ownership
         ScheduledTask task = ScheduledTaskDao.findByTaskId(taskId);
-        if (task == null || task.getUserId() != userId) {
-            ResponseUtil.sendError(response, 404, "Task not found");
+        if (task == null) {
+            ResponseUtil.sendError(response, 404, "Task not found: " + taskId);
+            return;
+        }
+        if (task.getUserId() != userId) {
+            ResponseUtil.sendError(response, 403, "Access denied");
             return;
         }
 

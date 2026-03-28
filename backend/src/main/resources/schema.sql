@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS users (
     email           VARCHAR(100) UNIQUE NOT NULL,
     password_hash   VARCHAR(255) NOT NULL,
     preferences     JSON         DEFAULT NULL,
+    theme           VARCHAR(30)  DEFAULT 'light',
     created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 

@@ -78,6 +78,15 @@
     <!-- ── v1.2 OAuth token exchange servlets ─────────────────────────── -->
 
     <servlet>
+        <servlet-name>RootRedirectServlet</servlet-name>
+        <servlet-class>com.agent.servlet.RootRedirectServlet</servlet-class>
+    </servlet>
+    <servlet-mapping>
+        <servlet-name>RootRedirectServlet</servlet-name>
+        <url-pattern>/</url-pattern>
+    </servlet-mapping>
+
+    <servlet>
         <servlet-name>ApiIndexServlet</servlet-name>
         <servlet-class>com.agent.servlet.ApiIndexServlet</servlet-class>
     </servlet>
@@ -137,6 +146,15 @@
     <servlet-mapping>
         <servlet-name>PreferencesServlet</servlet-name>
         <url-pattern>/api/auth/preferences</url-pattern>
+    </servlet-mapping>
+
+    <servlet>
+        <servlet-name>ThemeServlet</servlet-name>
+        <servlet-class>com.agent.servlet.auth.ThemeServlet</servlet-class>
+    </servlet>
+    <servlet-mapping>
+        <servlet-name>ThemeServlet</servlet-name>
+        <url-pattern>/api/auth/theme</url-pattern>
     </servlet-mapping>
 
     <servlet>

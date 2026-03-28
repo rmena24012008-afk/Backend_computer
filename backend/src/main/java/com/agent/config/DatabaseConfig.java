@@ -33,12 +33,13 @@ public class DatabaseConfig {
             config.setPassword(AppConfig.DB_PASSWORD);
             config.setDriverClassName("com.mysql.cj.jdbc.Driver");
 
-            // Pool configuration
-            config.setMaximumPoolSize(35);
-            config.setMinimumIdle(10);
+            // Pool configuration — sized for 31+ concurrent threads + SSE proxies
+            config.setMaximumPoolSize(50);
+            config.setMinimumIdle(15);
             config.setIdleTimeout(300000);
             config.setMaxLifetime(1500000);
-            config.setConnectionTimeout(10000);
+            config.setConnectionTimeout(30000);       // 30s wait under load (was 10s)
+            config.setLeakDetectionThreshold(60000);  // warn if connection held > 60s
 
             // Performance optimizations
             config.addDataSourceProperty("cachePrepStmts", "true");

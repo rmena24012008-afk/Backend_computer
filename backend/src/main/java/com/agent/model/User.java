@@ -21,6 +21,8 @@ public class User {
     private String      passwordHash;
     /** Per-user settings stored as a JSON object. May be {@code null}. */
     private JsonObject  preferences;
+    /** Dedicated theme column for quick frontend reads/writes. Defaults to {@code "light"}. */
+    private String      theme;
     private Timestamp   createdAt;
 
     // ── Constructors ──────────────────────────────────────────────────────────
@@ -98,6 +100,17 @@ public class User {
 
     public void setPreferences(JsonObject preferences) {
         this.preferences = preferences;
+    }
+
+    /**
+     * Returns the dedicated theme value, or {@code "light"} if not set.
+     */
+    public String getTheme() {
+        return theme != null ? theme : "light";
+    }
+
+    public void setTheme(String theme) {
+        this.theme = theme;
     }
 
     public Timestamp getCreatedAt() {

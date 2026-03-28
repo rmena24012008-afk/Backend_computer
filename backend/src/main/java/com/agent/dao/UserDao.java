@@ -96,6 +96,29 @@ public class UserDao {
 	}
 
 	/**
+	 * Update just the theme column for a user.
+	 *
+	 * <p>This is a lightweight update intended for the frontend theme-switcher,
+	 * so only the dedicated {@code theme} column is written — the
+	 * {@code preferences} JSON blob is <em>not</em> touched.
+	 *
+	 * @param userId the target user's primary key
+	 * @param theme  the new theme value (e.g. "light", "dark")
+	 * @return {@code true} if exactly one row was updated
+	 */
+	public static boolean updateTheme(long userId, String theme) {
+		String sql = "UPDATE users SET theme = ? WHERE id = ?";
+		try (Connection conn = DatabaseConfig.getConnection();
+				PreparedStatement stmt = conn.prepareStatement(sql)) {
+			stmt.setString(1, theme);
+			stmt.setLong(2, userId);
+			return stmt.executeUpdate() == 1;
+		} catch (SQLException e) {
+			throw new RuntimeException("DB error updating user theme", e);
+		}
+	}
+
+	/**
 	 * Persist a user's preferences JSON object.
 	 *
 	 * <p>
@@ -136,6 +159,10 @@ public class UserDao {
 		user.setEmail(rs.getString("email"));
 		user.setPasswordHash(rs.getString("password_hash"));
 		user.setCreatedAt(rs.getTimestamp("created_at"));
+
+		// v1.3 — dedicated theme column (may be NULL for pre-migration rows)
+		String themeVal = rs.getString("theme");
+		user.setTheme(themeVal != null ? themeVal : "light");
 
 		// v1.1 — preferences column (may be NULL for pre-migration rows)
 		String prefsJson = rs.getString("preferences");
