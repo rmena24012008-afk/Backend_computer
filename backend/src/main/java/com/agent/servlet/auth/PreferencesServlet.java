@@ -117,6 +117,9 @@ public class PreferencesServlet extends HttpServlet {
 
             // 4. Persist
             UserDao.updatePreferences(userId, merged);
+            if (merged.has("theme") && !merged.get("theme").isJsonNull()) {
+                UserDao.updateTheme(userId, merged.get("theme").getAsString());
+            }
 
             // 5. Respond
             Map<String, Object> data = new LinkedHashMap<>();
@@ -145,9 +148,16 @@ public class PreferencesServlet extends HttpServlet {
         JsonObject base   = deepCopy(DEFAULT_PREFERENCES);
         JsonObject stored = user.getPreferences();
         if (stored == null || stored.size() == 0) {
+            if (user.getTheme() != null && !user.getTheme().isBlank()) {
+                base.addProperty("theme", user.getTheme());
+            }
             return base;
         }
-        return deepMerge(base, stored);
+        JsonObject merged = deepMerge(base, stored);
+        if (user.getTheme() != null && !user.getTheme().isBlank()) {
+            merged.addProperty("theme", user.getTheme());
+        }
+        return merged;
     }
 
     // ── Private utilities ─────────────────────────────────────────────────────

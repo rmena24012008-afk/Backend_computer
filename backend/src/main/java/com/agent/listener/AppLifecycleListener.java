@@ -10,6 +10,10 @@ import org.slf4j.Logger;
 import javax.servlet.ServletContextEvent;
 import javax.servlet.ServletContextListener;
 import javax.servlet.annotation.WebListener;
+import java.sql.Driver;
+import java.sql.DriverManager;
+import java.sql.SQLException;
+import java.util.Enumeration;
 import java.io.File;
 
 /**
@@ -98,7 +102,32 @@ public class AppLifecycleListener implements ServletContextListener {
 
         DatabaseConfig.shutdown();
         AbandonedConnectionCleanupThread.checkedShutdown();
+        deregisterJdbcDrivers();
 
         log.info("APP SHUTDOWN — complete.");
+    }
+
+    /**
+     * Tomcat expects webapps to unregister JDBC drivers they loaded so
+     * repeated redeploys do not leave classloader leaks behind.
+     */
+    private void deregisterJdbcDrivers() {
+        ClassLoader appClassLoader = Thread.currentThread().getContextClassLoader();
+        Enumeration<Driver> drivers = DriverManager.getDrivers();
+
+        while (drivers.hasMoreElements()) {
+            Driver driver = drivers.nextElement();
+            if (driver.getClass().getClassLoader() != appClassLoader) {
+                continue;
+            }
+
+            try {
+                DriverManager.deregisterDriver(driver);
+                log.info("APP SHUTDOWN — deregistered JDBC driver: {}", driver.getClass().getName());
+            } catch (SQLException e) {
+                log.warn("APP SHUTDOWN — failed to deregister JDBC driver {}: {}",
+                        driver.getClass().getName(), e.getMessage());
+            }
+        }
     }
 }

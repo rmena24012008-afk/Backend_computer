@@ -24,6 +24,7 @@ import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.RejectedExecutionException;
@@ -153,6 +154,7 @@ public class ChatServlet extends HttpServlet {
             // 8. Forward to Flask Agent Server using a bounded executor
             Runnable streamTask = () -> {
                 long streamStart = System.currentTimeMillis();
+                AtomicBoolean clientDisconnected = new AtomicBoolean(false);
                 log.info("CHAT STREAM START | userId={} | sessionId={} | thread={}",
                         userId, sessionId, Thread.currentThread().getName());
 
@@ -170,7 +172,7 @@ public class ChatServlet extends HttpServlet {
                                     synchronized (writer) {
                                         writer.write("event: " + eventType + "\n");
                                         writer.write("data: " + eventData + "\n\n");
-                                        writer.flush();
+                                        flushWriter(writer, clientDisconnected);
                                     }
                                 }
 
@@ -232,17 +234,23 @@ public class ChatServlet extends HttpServlet {
                     synchronized (writer) {
                         writer.write("event: done\n");
                         writer.write("data: " + doneData.toString() + "\n\n");
-                        writer.flush();
+                        flushWriter(writer, clientDisconnected);
                     }
 
                     long elapsed = System.currentTimeMillis() - streamStart;
                     log.info("CHAT STREAM DONE | userId={} | sessionId={} | messageId={} | elapsed={}ms",
                             userId, sessionId, messageId, elapsed);
 
-                    asyncContext.complete();
+                    safeComplete(asyncContext);
 
                 } catch (Exception e) {
                     long elapsed = System.currentTimeMillis() - streamStart;
+                    if (clientDisconnected.get()) {
+                        log.info("CHAT STREAM CLOSED BY CLIENT | userId={} | sessionId={} | elapsed={}ms",
+                                userId, sessionId, elapsed);
+                        safeComplete(asyncContext);
+                        return;
+                    }
                     log.error("CHAT STREAM ERROR | userId={} | sessionId={} | elapsed={}ms | error={}",
                             userId, sessionId, elapsed, e.getMessage(), e);
                     try {
@@ -253,13 +261,11 @@ public class ChatServlet extends HttpServlet {
                         synchronized (writer) {
                             writer.write("event: error\n");
                             writer.write("data: " + errorData.toString() + "\n\n");
-                            writer.flush();
+                            flushWriter(writer, clientDisconnected);
                         }
-                        asyncContext.complete();
+                        safeComplete(asyncContext);
                     } catch (IOException ignored) {
-                        try { asyncContext.complete(); } catch (Exception alsoIgnored) {
-                            // Context may already be completed
-                        }
+                        safeComplete(asyncContext);
                     }
                 }
             };
@@ -275,6 +281,22 @@ public class ChatServlet extends HttpServlet {
         } catch (Exception e) {
             log.error("CHAT — unexpected error | error={}", e.getMessage(), e);
             ResponseUtil.sendError(response, 500, "Internal server error: " + e.getMessage());
+        }
+    }
+
+    private static void flushWriter(PrintWriter writer, AtomicBoolean clientDisconnected) throws IOException {
+        writer.flush();
+        if (writer.checkError()) {
+            clientDisconnected.set(true);
+            throw new IOException("Client disconnected during SSE stream");
+        }
+    }
+
+    private static void safeComplete(AsyncContext asyncContext) {
+        try {
+            asyncContext.complete();
+        } catch (IllegalStateException ignored) {
+            // Context may already be completed after a client disconnect.
         }
     }
 
