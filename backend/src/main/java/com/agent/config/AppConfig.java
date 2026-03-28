@@ -5,7 +5,10 @@ import org.slf4j.LoggerFactory;
 
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 import java.util.Properties;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * Application configuration — resolves values in this priority order:
@@ -58,7 +61,12 @@ public class AppConfig {
     public static final String TASK_EXECUTOR_WS_URL = get("TASK_EXECUTOR_WS_URL", "ws://localhost:6000/ws");
 
     // ── CORS ────────────────────────────────────────────────────────────
-    public static final String FRONTEND_ORIGIN = get("FRONTEND_ORIGIN", "*");
+    public static final String FRONTEND_ORIGIN = getCorsOrigins();
+    public static final Set<String> ALLOWED_ORIGINS =
+            Arrays.stream(FRONTEND_ORIGIN.split(","))
+                    .map(AppConfig::normalizeOrigin)
+                    .filter(s -> !s.isEmpty())
+                    .collect(Collectors.toSet());
 
     /**
      * Resolve a configuration value using the priority chain:
@@ -86,6 +94,31 @@ public class AppConfig {
         }
         // 4. Hardcoded fallback (non-sensitive only)
         return defaultValue;
+    }
+
+    /**
+     * Support both FRONTEND_ORIGIN and the mistakenly-used FRONTEND_ORIGINS key.
+     */
+    private static String getCorsOrigins() {
+        String origins = get("FRONTEND_ORIGIN", "");
+        if (!origins.isBlank()) {
+            return origins;
+        }
+        return get("FRONTEND_ORIGINS", "http://localhost:3000");
+    }
+
+    /**
+     * Normalize origins for exact-match CORS comparisons.
+     */
+    public static String normalizeOrigin(String origin) {
+        if (origin == null) {
+            return "";
+        }
+        String normalized = origin.trim();
+        while (normalized.endsWith("/")) {
+            normalized = normalized.substring(0, normalized.length() - 1);
+        }
+        return normalized;
     }
 
     /**
