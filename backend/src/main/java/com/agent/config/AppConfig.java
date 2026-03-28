@@ -6,6 +6,9 @@ import org.slf4j.LoggerFactory;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.Properties;
+import java.util.Arrays;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * Application configuration — resolves values in this priority order:
@@ -58,7 +61,14 @@ public class AppConfig {
     public static final String TASK_EXECUTOR_WS_URL = get("TASK_EXECUTOR_WS_URL", "ws://localhost:6000/ws");
 
     // ── CORS ────────────────────────────────────────────────────────────
-    public static final String FRONTEND_ORIGIN = get("FRONTEND_ORIGIN", "*");
+    public static final String FRONTEND_ORIGIN = get("FRONTEND_ORIGIN", "http://localhost:3000");
+
+
+    public static final Set<String> ALLOWED_ORIGINS =
+            Arrays.stream(FRONTEND_ORIGIN.split(","))
+                    .map(String::trim)
+                    .filter(s -> !s.isEmpty())
+                    .collect(Collectors.toSet());
 
     /**
      * Resolve a configuration value using the priority chain:

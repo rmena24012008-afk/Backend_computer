@@ -33,13 +33,13 @@ public class CorsFilter implements Filter {
         response.setHeader("Vary", "Origin");
 
         String origin = request.getHeader("Origin");
-        String allowedOrigin = AppConfig.FRONTEND_ORIGIN;
+//        String allowedOrigin = AppConfig.FRONTEND_ORIGIN;
 
         // Only reflect the ACAO header when the request Origin matches exactly.
         // For same-origin requests (no Origin header) or unknown origins, omit
         // the header entirely — the browser will block mismatched origins anyway,
         // and this avoids leaking the allowed origin in every response.
-        if (origin != null && origin.equals(allowedOrigin)) {
+        if (origin != null && AppConfig.ALLOWED_ORIGINS.contains(origin)) {
             response.setHeader("Access-Control-Allow-Origin", origin);
             response.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
             response.setHeader("Access-Control-Allow-Headers",
