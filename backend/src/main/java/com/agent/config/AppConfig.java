@@ -66,7 +66,7 @@ public class AppConfig {
 
     public static final Set<String> ALLOWED_ORIGINS =
             Arrays.stream(FRONTEND_ORIGIN.split(","))
-                    .map(String::trim)
+                    .map(AppConfig::normalizeOrigin)
                     .filter(s -> !s.isEmpty())
                     .collect(Collectors.toSet());
 
@@ -96,6 +96,20 @@ public class AppConfig {
         }
         // 4. Hardcoded fallback (non-sensitive only)
         return defaultValue;
+    }
+
+    /**
+     * Normalize origins for exact-match CORS comparisons.
+     */
+    public static String normalizeOrigin(String origin) {
+        if (origin == null) {
+            return "";
+        }
+        String normalized = origin.trim();
+        while (normalized.endsWith("/")) {
+            normalized = normalized.substring(0, normalized.length() - 1);
+        }
+        return normalized;
     }
 
     /**

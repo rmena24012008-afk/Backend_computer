@@ -32,7 +32,7 @@ public class CorsFilter implements Filter {
         // cached response to a cross-origin client.
         response.setHeader("Vary", "Origin");
 
-        String origin = request.getHeader("Origin");
+        String origin = AppConfig.normalizeOrigin(request.getHeader("Origin"));
 //        String allowedOrigin = AppConfig.FRONTEND_ORIGIN;
 
         // Only reflect the ACAO header when the request Origin matches exactly.
