@@ -9,6 +9,7 @@ import com.agent.util.AppLogger;
 import com.agent.util.JsonUtil;
 import com.agent.util.ResponseUtil;
 import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import org.slf4j.Logger;
 
@@ -86,7 +87,7 @@ public class TasksServlet extends HttpServlet {
         if (agentTasks != null) {
             for (int i = 0; i < agentTasks.size(); i++) {
                 JsonObject agentTask = agentTasks.get(i).getAsJsonObject();
-                String id = agentTask.has("id") ? agentTask.get("id").getAsString() : null;
+                String id = getString(agentTask, "id");
                 if (id != null) {
                     agentById.put(id, agentTask);
                 }
@@ -101,13 +102,11 @@ public class TasksServlet extends HttpServlet {
             // Overlay live agent fields if available
             JsonObject agentTask = agentById.remove(task.getTaskId());
             if (agentTask != null) {
-                item.put("is_active", agentTask.has("is_active")
-                        ? agentTask.get("is_active").getAsBoolean() : false);
-                item.put("next_run", agentTask.has("next_run")
-                        ? agentTask.get("next_run").getAsString() : null);
+                item.put("is_active", getBoolean(agentTask, "is_active", false));
+                item.put("next_run", getString(agentTask, "next_run"));
                 // Agent may have a more current status
-                if (agentTask.has("status")) {
-                    String agentStatus = agentTask.get("status").getAsString();
+                String agentStatus = getString(agentTask, "status");
+                if (agentStatus != null) {
                     // Only override if MySQL status is still "scheduled" or "running"
                     String mysqlStatus = task.getStatus();
                     if ("scheduled".equals(mysqlStatus) || "running".equals(mysqlStatus)) {
@@ -127,20 +126,13 @@ public class TasksServlet extends HttpServlet {
             JsonObject agentTask = entry.getValue();
             Map<String, Object> item = new LinkedHashMap<>();
             item.put("task_id", entry.getKey());
-            item.put("description", agentTask.has("description")
-                    ? agentTask.get("description").getAsString() : "");
-            item.put("status", agentTask.has("status")
-                    ? agentTask.get("status").getAsString() : "scheduled");
-            item.put("is_active", agentTask.has("is_active")
-                    ? agentTask.get("is_active").getAsBoolean() : false);
-            item.put("next_run", agentTask.has("next_run")
-                    ? agentTask.get("next_run").getAsString() : null);
-            item.put("interval_seconds", agentTask.has("interval_seconds")
-                    ? agentTask.get("interval_seconds").getAsInt() : 0);
-            item.put("total_runs", agentTask.has("total_runs")
-                    ? agentTask.get("total_runs").getAsInt() : 0);
-            item.put("completed_runs", agentTask.has("completed_runs")
-                    ? agentTask.get("completed_runs").getAsInt() : 0);
+            item.put("description", getString(agentTask, "description", ""));
+            item.put("status", getString(agentTask, "status", "scheduled"));
+            item.put("is_active", getBoolean(agentTask, "is_active", false));
+            item.put("next_run", getString(agentTask, "next_run"));
+            item.put("interval_seconds", getInt(agentTask, "interval_seconds", 0));
+            item.put("total_runs", getInt(agentTask, "total_runs", 0));
+            item.put("completed_runs", getInt(agentTask, "completed_runs", 0));
             item.put("output_file", null);
             item.put("started_at", null);
             item.put("ends_at", null);
@@ -172,10 +164,8 @@ public class TasksServlet extends HttpServlet {
         // 3. Enrich with live agent status
         JsonObject agentTask = fetchFromAgent("/tasks/" + userId + "/" + taskId, userId);
         if (agentTask != null) {
-            data.put("is_active", agentTask.has("is_active")
-                    ? agentTask.get("is_active").getAsBoolean() : false);
-            data.put("next_run", agentTask.has("next_run")
-                    ? agentTask.get("next_run").getAsString() : null);
+            data.put("is_active", getBoolean(agentTask, "is_active", false));
+            data.put("next_run", getString(agentTask, "next_run"));
             if (agentTask.has("result") && !agentTask.get("result").isJsonNull()) {
                 data.put("last_result", agentTask.get("result").toString());
             }
@@ -219,6 +209,33 @@ public class TasksServlet extends HttpServlet {
         item.put("ends_at", task.getEndsAt());
         item.put("created_at", task.getCreatedAt());
         return item;
+    }
+
+    static String getString(JsonObject source, String field) {
+        return getString(source, field, null);
+    }
+
+    static String getString(JsonObject source, String field, String defaultValue) {
+        JsonElement value = getValue(source, field);
+        return value == null ? defaultValue : value.getAsString();
+    }
+
+    static boolean getBoolean(JsonObject source, String field, boolean defaultValue) {
+        JsonElement value = getValue(source, field);
+        return value == null ? defaultValue : value.getAsBoolean();
+    }
+
+    static int getInt(JsonObject source, String field, int defaultValue) {
+        JsonElement value = getValue(source, field);
+        return value == null ? defaultValue : value.getAsInt();
+    }
+
+    private static JsonElement getValue(JsonObject source, String field) {
+        if (source == null || field == null || !source.has(field)) {
+            return null;
+        }
+        JsonElement value = source.get(field);
+        return value == null || value.isJsonNull() ? null : value;
     }
 
     /**

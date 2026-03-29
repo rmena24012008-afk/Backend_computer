@@ -38,11 +38,6 @@ public class AppLifecycleListener implements ServletContextListener {
         if (contextPath == null || "/".equals(contextPath)) {
             contextPath = "";
         }
-        if (System.getProperty("HEALTH_CONTEXT_PATH") == null
-                && (System.getenv("HEALTH_CONTEXT_PATH") == null
-                || System.getenv("HEALTH_CONTEXT_PATH").isBlank())) {
-            System.setProperty("HEALTH_CONTEXT_PATH", contextPath);
-        }
 
         // ── Ensure log directory exists ───────────────────────────────────
         String logDir = System.getenv("LOG_DIR");
@@ -74,7 +69,7 @@ public class AppLifecycleListener implements ServletContextListener {
 
         if (monitorEnabled) {
             try {
-                healthMonitor = new ServerHealthMonitor();
+                healthMonitor = new ServerHealthMonitor(contextPath);
                 healthMonitor.start();
                 log.info("APP STARTUP — ServerHealthMonitor started (auto-restart on slowdown enabled).");
             } catch (Exception e) {
