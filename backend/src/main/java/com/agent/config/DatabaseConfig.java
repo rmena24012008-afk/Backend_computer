@@ -1,7 +1,9 @@
 package com.agent.config;
 
+import com.agent.util.AppLogger;
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
+import org.slf4j.Logger;
 
 import javax.sql.DataSource;
 import java.sql.Connection;
@@ -12,6 +14,8 @@ import java.sql.SQLException;
  * All DAOs use DatabaseConfig.getConnection() to acquire connections.
  */
 public class DatabaseConfig {
+
+    private static final Logger log = AppLogger.get(DatabaseConfig.class);
 	
     private static HikariDataSource dataSource;
 
@@ -20,6 +24,7 @@ public class DatabaseConfig {
      */
     public static synchronized DataSource getDataSource() {
         if (dataSource == null) {
+            log.info("DB INIT — creating HikariCP connection pool...");
             HikariConfig config = new HikariConfig();
 
             String jdbcUrl = "jdbc:mysql://" +
@@ -28,6 +33,7 @@ public class DatabaseConfig {
                     AppConfig.DB_NAME +
                     "?sslMode=REQUIRED&enabledTLSProtocols=TLSv1.2&serverTimezone=UTC";
 
+            log.info("DB INIT — jdbcUrl={} | user={}", jdbcUrl, AppConfig.DB_USER);
             config.setJdbcUrl(jdbcUrl);
             config.setUsername(AppConfig.DB_USER);
             config.setPassword(AppConfig.DB_PASSWORD);
@@ -51,7 +57,14 @@ public class DatabaseConfig {
             config.addDataSourceProperty("prepStmtCacheSqlLimit", "2048");
             config.addDataSourceProperty("useServerPrepStmts", "true");
 
-            dataSource = new HikariDataSource(config);
+            try {
+                dataSource = new HikariDataSource(config);
+                log.info("DB INIT — HikariCP pool created successfully | poolName={} | maxPoolSize={}",
+                        config.getPoolName(), config.getMaximumPoolSize());
+            } catch (Exception e) {
+                log.error("DB INIT — failed to create HikariCP pool | error={}", e.getMessage(), e);
+                throw e;
+            }
         }
         return dataSource;
     }
@@ -61,7 +74,12 @@ public class DatabaseConfig {
      * Always use try-with-resources to ensure proper cleanup.
      */
     public static Connection getConnection() throws SQLException {
-        return getDataSource().getConnection();
+        try {
+            return getDataSource().getConnection();
+        } catch (SQLException e) {
+            log.error("DB CONNECTION — failed to obtain connection | error={}", e.getMessage(), e);
+            throw e;
+        }
     }
 
     /**
@@ -69,8 +87,10 @@ public class DatabaseConfig {
      */
     public static synchronized void shutdown() {
         if (dataSource != null && !dataSource.isClosed()) {
+            log.info("DB SHUTDOWN — closing HikariCP connection pool...");
             dataSource.close();
             dataSource = null;
+            log.info("DB SHUTDOWN — connection pool closed.");
         }
     }
 

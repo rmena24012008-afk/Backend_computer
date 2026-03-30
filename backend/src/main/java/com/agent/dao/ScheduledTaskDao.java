@@ -2,20 +2,22 @@ package com.agent.dao;
 
 import com.agent.config.DatabaseConfig;
 import com.agent.model.ScheduledTask;
+import com.agent.util.AppLogger;
+import org.slf4j.Logger;
 
 import java.sql.*;
 import java.util.ArrayList;
 import java.util.List;
 
-/**
- * Data Access Object for the `scheduled_tasks` table.
- */
 public class ScheduledTaskDao {
+
+    private static final Logger log = AppLogger.get(ScheduledTaskDao.class);
 
     /**
      * Find all tasks for a user, ordered by created_at DESC.
      */
     public static List<ScheduledTask> findByUserId(long userId) {
+        log.debug("TASK FIND_BY_USER | userId={}", userId);
         String sql = "SELECT * FROM scheduled_tasks WHERE user_id = ? ORDER BY created_at DESC";
         List<ScheduledTask> tasks = new ArrayList<>();
         try (Connection conn = DatabaseConfig.getConnection();
@@ -25,8 +27,10 @@ public class ScheduledTaskDao {
             while (rs.next()) {
                 tasks.add(mapRow(rs));
             }
+            log.debug("TASK FIND_BY_USER OK | userId={} | count={}", userId, tasks.size());
             return tasks;
         } catch (SQLException e) {
+            log.error("TASK FIND_BY_USER FAILED | userId={} | error={}", userId, e.getMessage(), e);
             throw new RuntimeException("DB error finding tasks by user", e);
         }
     }
@@ -35,16 +39,20 @@ public class ScheduledTaskDao {
      * Find a task by its task_id (e.g., "sched_abc123").
      */
     public static ScheduledTask findByTaskId(String taskId) {
+        log.debug("TASK FIND_BY_ID | taskId={}", taskId);
         String sql = "SELECT * FROM scheduled_tasks WHERE task_id = ?";
         try (Connection conn = DatabaseConfig.getConnection();
              PreparedStatement stmt = conn.prepareStatement(sql)) {
             stmt.setString(1, taskId);
             ResultSet rs = stmt.executeQuery();
             if (rs.next()) {
+                log.debug("TASK FOUND | taskId={}", taskId);
                 return mapRow(rs);
             }
+            log.debug("TASK NOT FOUND | taskId={}", taskId);
             return null;
         } catch (SQLException e) {
+            log.error("TASK FIND_BY_ID FAILED | taskId={} | error={}", taskId, e.getMessage(), e);
             throw new RuntimeException("DB error finding task by taskId", e);
         }
     }
@@ -73,8 +81,12 @@ public class ScheduledTaskDao {
 
             ResultSet keys = stmt.getGeneratedKeys();
             keys.next();
-            return keys.getLong(1);
+            long id = keys.getLong(1);
+            log.info("TASK CREATE OK | userId={} | taskId={} | intervalSecs={} | totalRuns={} | id={}",
+                    userId, taskId, intervalSecs, totalRuns, id);
+            return id;
         } catch (SQLException e) {
+            log.error("TASK CREATE FAILED | userId={} | taskId={} | error={}", userId, taskId, e.getMessage(), e);
             throw new RuntimeException("DB error creating scheduled task", e);
         }
     }
@@ -83,13 +95,16 @@ public class ScheduledTaskDao {
      * Update the status of a task.
      */
     public static void updateStatus(String taskId, String status) {
+        log.info("TASK UPDATE_STATUS | taskId={} | newStatus={}", taskId, status);
         String sql = "UPDATE scheduled_tasks SET status = ? WHERE task_id = ?";
         try (Connection conn = DatabaseConfig.getConnection();
              PreparedStatement stmt = conn.prepareStatement(sql)) {
             stmt.setString(1, status);
             stmt.setString(2, taskId);
             stmt.executeUpdate();
+            log.debug("TASK UPDATE_STATUS OK | taskId={} | status={}", taskId, status);
         } catch (SQLException e) {
+            log.error("TASK UPDATE_STATUS FAILED | taskId={} | status={} | error={}", taskId, status, e.getMessage(), e);
             throw new RuntimeException("DB error updating task status", e);
         }
     }
@@ -98,12 +113,14 @@ public class ScheduledTaskDao {
      * Increment the completed_runs counter by 1.
      */
     public static void incrementCompletedRuns(String taskId) {
+        log.debug("TASK INCREMENT_RUNS | taskId={}", taskId);
         String sql = "UPDATE scheduled_tasks SET completed_runs = completed_runs + 1 WHERE task_id = ?";
         try (Connection conn = DatabaseConfig.getConnection();
              PreparedStatement stmt = conn.prepareStatement(sql)) {
             stmt.setString(1, taskId);
             stmt.executeUpdate();
         } catch (SQLException e) {
+            log.error("TASK INCREMENT_RUNS FAILED | taskId={} | error={}", taskId, e.getMessage(), e);
             throw new RuntimeException("DB error incrementing completed runs", e);
         }
     }
@@ -112,6 +129,7 @@ public class ScheduledTaskDao {
      * Update the output file path of a task.
      */
     public static void updateOutputFile(String taskId, String outputFile) {
+        log.info("TASK UPDATE_OUTPUT | taskId={} | outputFile={}", taskId, outputFile);
         String sql = "UPDATE scheduled_tasks SET output_file = ? WHERE task_id = ?";
         try (Connection conn = DatabaseConfig.getConnection();
              PreparedStatement stmt = conn.prepareStatement(sql)) {
@@ -119,6 +137,7 @@ public class ScheduledTaskDao {
             stmt.setString(2, taskId);
             stmt.executeUpdate();
         } catch (SQLException e) {
+            log.error("TASK UPDATE_OUTPUT FAILED | taskId={} | error={}", taskId, e.getMessage(), e);
             throw new RuntimeException("DB error updating task output file", e);
         }
     }

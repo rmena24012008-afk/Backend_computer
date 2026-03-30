@@ -4,9 +4,11 @@ import com.agent.dao.AuthTokenDao;
 import com.agent.model.AuthToken;
 import com.agent.service.OAuthTokenService;
 import com.agent.service.ZohoOAuthService;
+import com.agent.util.AppLogger;
 import com.agent.util.JsonUtil;
 import com.agent.util.ResponseUtil;
 import com.google.gson.JsonObject;
+import org.slf4j.Logger;
 import javax.servlet.ServletException;
 import javax.servlet.http.HttpServlet;
 import javax.servlet.http.HttpServletRequest;
@@ -18,14 +20,15 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-/**
- * POST   /api/auth/oauth/link — Save client credentials & get authorization URL
+/** POST   /api/auth/oauth/link — Save client credentials & get authorization URL
  * GET    /api/auth/oauth/link — List all linked OAuth providers for the user
  * PUT    /api/auth/oauth/link — Force-refresh an access token
  * DELETE /api/auth/oauth/link — Unlink a provider
  */
- 
+
 public class OAuthLinkServlet extends HttpServlet {
+
+    private static final Logger log = AppLogger.get(OAuthLinkServlet.class);
 
     /* ── POST: Save credentials, return authorization URL ── */
     @Override
@@ -99,9 +102,11 @@ public class OAuthLinkServlet extends HttpServlet {
                 data.put("authorization_url", authUrl);
             }
 
+            log.info("OAUTH_LINK POST | credentials saved | userId={} | provider={}", userId, provider);
             ResponseUtil.sendCreated(response, data);
 
         } catch (Exception e) {
+            log.error("OAUTH_LINK POST | error={}", e.getMessage(), e);
             ResponseUtil.sendError(response, 500, "Error linking provider: " + e.getMessage());
         }
     }
@@ -129,9 +134,11 @@ public class OAuthLinkServlet extends HttpServlet {
                 result.add(entry);
             }
 
+            log.debug("OAUTH_LINK GET | listed providers | userId={} | count={}", userId, result.size());
             ResponseUtil.sendSuccess(response, result);
 
         } catch (Exception e) {
+            log.error("OAUTH_LINK GET | error={}", e.getMessage(), e);
             ResponseUtil.sendError(response, 500, "Error listing providers: " + e.getMessage());
         }
     }
@@ -182,9 +189,11 @@ public class OAuthLinkServlet extends HttpServlet {
                     ? refreshed.getExpiresAt().toString() : null);
             data.put("scope",        refreshed.getScope());
 
+            log.info("OAUTH_LINK PUT | token refreshed | userId={} | provider={}", userId, refreshed.getProvider());
             ResponseUtil.sendSuccess(response, data);
 
         } catch (Exception e) {
+            log.error("OAUTH_LINK PUT | error={}", e.getMessage(), e);
             ResponseUtil.sendError(response, 500, "Error refreshing token: " + e.getMessage());
         }
     }
@@ -214,9 +223,11 @@ public class OAuthLinkServlet extends HttpServlet {
             data.put("provider", provider);
             data.put("status", "unlinked");
 
+            log.info("OAUTH_LINK DELETE | provider unlinked | userId={} | provider={}", userId, provider);
             ResponseUtil.sendSuccess(response, data);
 
         } catch (Exception e) {
+            log.error("OAUTH_LINK DELETE | error={}", e.getMessage(), e);
             ResponseUtil.sendError(response, 500, "Error unlinking provider: " + e.getMessage());
         }
     }

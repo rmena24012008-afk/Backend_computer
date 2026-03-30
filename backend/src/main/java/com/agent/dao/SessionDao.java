@@ -2,26 +2,22 @@ package com.agent.dao;
 
 import com.agent.config.DatabaseConfig;
 import com.agent.model.ChatSession;
+import com.agent.util.AppLogger;
+import org.slf4j.Logger;
 
 import java.sql.*;
 import java.util.ArrayList;
 import java.util.List;
 
-/**
- * Data Access Object for the {@code chat_sessions} table.
- *
- * <p>v1.1 changes:
- * <ul>
- *   <li>{@link #mapRow(ResultSet)} reads the new {@code summary} TEXT column.</li>
- *   <li>{@link #updateSummary(long, String)} persists an AI-generated summary.</li>
- * </ul>
- */
 public class SessionDao {
+
+    private static final Logger log = AppLogger.get(SessionDao.class);
 
     /**
      * Find all sessions for a user, ordered by updated_at DESC.
      */
     public static List<ChatSession> findByUserId(long userId) {
+        log.debug("SESSION FIND_BY_USER | userId={}", userId);
         String sql = "SELECT * FROM chat_sessions WHERE user_id = ? ORDER BY updated_at DESC";
         List<ChatSession> sessions = new ArrayList<>();
         try (Connection conn = DatabaseConfig.getConnection();
@@ -31,8 +27,10 @@ public class SessionDao {
             while (rs.next()) {
                 sessions.add(mapRow(rs));
             }
+            log.debug("SESSION FIND_BY_USER OK | userId={} | count={}", userId, sessions.size());
             return sessions;
         } catch (SQLException e) {
+            log.error("SESSION FIND_BY_USER FAILED | userId={} | error={}", userId, e.getMessage(), e);
             throw new RuntimeException("DB error finding sessions by user", e);
         }
     }
@@ -41,6 +39,7 @@ public class SessionDao {
      * Find a session by its ID.
      */
     public static ChatSession findById(long sessionId) {
+        log.debug("SESSION FIND_BY_ID | sessionId={}", sessionId);
         String sql = "SELECT * FROM chat_sessions WHERE id = ?";
         try (Connection conn = DatabaseConfig.getConnection();
              PreparedStatement stmt = conn.prepareStatement(sql)) {
@@ -49,8 +48,10 @@ public class SessionDao {
             if (rs.next()) {
                 return mapRow(rs);
             }
+            log.debug("SESSION NOT FOUND | sessionId={}", sessionId);
             return null;
         } catch (SQLException e) {
+            log.error("SESSION FIND_BY_ID FAILED | sessionId={} | error={}", sessionId, e.getMessage(), e);
             throw new RuntimeException("DB error finding session by id", e);
         }
     }
@@ -62,6 +63,7 @@ public class SessionDao {
      * to {@code NULL}. Use {@link #updateSummary(long, String)} to populate it.
      */
     public static ChatSession create(long userId, String title) {
+        log.info("SESSION CREATE | userId={} | title={}", userId, title);
         String sql = "INSERT INTO chat_sessions (user_id, title) VALUES (?, ?)";
         try (Connection conn = DatabaseConfig.getConnection();
              PreparedStatement stmt = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
@@ -72,9 +74,11 @@ public class SessionDao {
             ResultSet keys = stmt.getGeneratedKeys();
             keys.next();
             long sessionId = keys.getLong(1);
+            log.info("SESSION CREATE OK | userId={} | sessionId={}", userId, sessionId);
 
             return findById(sessionId);
         } catch (SQLException e) {
+            log.error("SESSION CREATE FAILED | userId={} | error={}", userId, e.getMessage(), e);
             throw new RuntimeException("DB error creating session", e);
         }
     }
@@ -83,6 +87,7 @@ public class SessionDao {
      * Update the title of a session.
      */
     public static void updateTitle(long sessionId, String title) {
+        log.debug("SESSION UPDATE_TITLE | sessionId={} | title={}", sessionId, title);
         String sql = "UPDATE chat_sessions SET title = ? WHERE id = ?";
         try (Connection conn = DatabaseConfig.getConnection();
              PreparedStatement stmt = conn.prepareStatement(sql)) {
@@ -90,6 +95,7 @@ public class SessionDao {
             stmt.setLong(2, sessionId);
             stmt.executeUpdate();
         } catch (SQLException e) {
+            log.error("SESSION UPDATE_TITLE FAILED | sessionId={} | error={}", sessionId, e.getMessage(), e);
             throw new RuntimeException("DB error updating session title", e);
         }
     }
@@ -108,6 +114,7 @@ public class SessionDao {
      * @param summary   the new summary text, or {@code null} to clear it
      */
     public static void updateSummary(long sessionId, String summary) {
+        log.debug("SESSION UPDATE_SUMMARY | sessionId={}", sessionId);
         String sql = "UPDATE chat_sessions SET summary = ? WHERE id = ?";
         try (Connection conn = DatabaseConfig.getConnection();
              PreparedStatement stmt = conn.prepareStatement(sql)) {
@@ -119,6 +126,7 @@ public class SessionDao {
             stmt.setLong(2, sessionId);
             stmt.executeUpdate();
         } catch (SQLException e) {
+            log.error("SESSION UPDATE_SUMMARY FAILED | sessionId={} | error={}", sessionId, e.getMessage(), e);
             throw new RuntimeException("DB error updating session summary", e);
         }
     }
@@ -127,12 +135,15 @@ public class SessionDao {
      * Delete a session (cascades to messages).
      */
     public static void delete(long sessionId) {
+        log.info("SESSION DELETE | sessionId={}", sessionId);
         String sql = "DELETE FROM chat_sessions WHERE id = ?";
         try (Connection conn = DatabaseConfig.getConnection();
              PreparedStatement stmt = conn.prepareStatement(sql)) {
             stmt.setLong(1, sessionId);
             stmt.executeUpdate();
+            log.info("SESSION DELETE OK | sessionId={}", sessionId);
         } catch (SQLException e) {
+            log.error("SESSION DELETE FAILED | sessionId={} | error={}", sessionId, e.getMessage(), e);
             throw new RuntimeException("DB error deleting session", e);
         }
     }
@@ -157,7 +168,7 @@ public class SessionDao {
         session.setId(rs.getLong("id"));
         session.setUserId(rs.getLong("user_id"));
         session.setTitle(rs.getString("title"));
-        session.setSummary(rs.getString("summary"));   // v1.1 — may be null
+        session.setSummary(rs.getString("summary"));
         session.setCreatedAt(rs.getTimestamp("created_at"));
         session.setUpdatedAt(rs.getTimestamp("updated_at"));
         return session;

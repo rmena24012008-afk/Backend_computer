@@ -2,9 +2,11 @@ package com.agent.service;
 
 import com.agent.config.AppConfig;
 import com.agent.model.User;
+import com.agent.util.AppLogger;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
+import org.slf4j.Logger;
 
 import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
@@ -17,6 +19,7 @@ import java.util.Date;
  */
 public class JwtService {
 
+    private static final Logger log = AppLogger.get(JwtService.class);
     private static final String SECRET = AppConfig.JWT_SECRET;
     private static final long EXPIRATION_MS = 24 * 60 * 60 * 1000; // 24 hours
 
@@ -27,14 +30,22 @@ public class JwtService {
      * @return signed JWT token string
      */
     public static String generateToken(User user) {
-        return Jwts.builder()
-                .claim("user_id", user.getId())
-                .claim("username", user.getUsername())
-                .claim("email", user.getEmail())
-                .issuedAt(new Date())
-                .expiration(new Date(System.currentTimeMillis() + EXPIRATION_MS))
-                .signWith(getSigningKey())
-                .compact();
+        log.debug("JWT GENERATE | userId={} | username={}", user.getId(), user.getUsername());
+        try {
+            String token = Jwts.builder()
+                    .claim("user_id", user.getId())
+                    .claim("username", user.getUsername())
+                    .claim("email", user.getEmail())
+                    .issuedAt(new Date())
+                    .expiration(new Date(System.currentTimeMillis() + EXPIRATION_MS))
+                    .signWith(getSigningKey())
+                    .compact();
+            log.info("JWT GENERATED | userId={} | username={}", user.getId(), user.getUsername());
+            return token;
+        } catch (Exception e) {
+            log.error("JWT GENERATE FAILED | userId={} | error={}", user.getId(), e.getMessage(), e);
+            throw e;
+        }
     }
 
     /**
@@ -45,11 +56,18 @@ public class JwtService {
      * @return the token's claims
      */
     public static Claims validateToken(String token) {
-        return Jwts.parser()
-                .verifyWith(getSigningKey())
-                .build()
-                .parseSignedClaims(token)
-                .getPayload();
+        try {
+            Claims claims = Jwts.parser()
+                    .verifyWith(getSigningKey())
+                    .build()
+                    .parseSignedClaims(token)
+                    .getPayload();
+            log.debug("JWT VALIDATED | userId={}", claims.get("user_id"));
+            return claims;
+        } catch (Exception e) {
+            log.warn("JWT VALIDATION FAILED | error={}", e.getMessage());
+            throw e;
+        }
     }
 
     private static SecretKey getSigningKey() {

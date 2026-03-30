@@ -1,7 +1,9 @@
 package com.agent.servlet.workspace;
 
 import com.agent.config.AppConfig;
+import com.agent.util.AppLogger;
 import com.agent.util.ResponseUtil;
+import org.slf4j.Logger;
 
 import javax.servlet.ServletException;
 import javax.servlet.annotation.WebServlet;
@@ -28,6 +30,7 @@ import java.nio.charset.StandardCharsets;
 @WebServlet("/api/workspace/*")
 public class WorkspaceServlet extends HttpServlet {
 
+    private static final Logger log = AppLogger.get(WorkspaceServlet.class);
     private static final String AI_AGENT = AppConfig.FLASK_AGENT_URL;
 
     // ── GET ───────────────────────────────────────────────────────────────────
@@ -41,7 +44,8 @@ public class WorkspaceServlet extends HttpServlet {
         String queryString = req.getQueryString();
         if (queryString != null) agentPath += "?" + queryString;
 
-proxyRequest(resp, "GET", agentPath, null, userId);
+log.debug("WORKSPACE GET | userId={} | path={}", userId, agentPath);
+        proxyRequest(resp, "GET", agentPath, null, userId);
     }
 
     // ── PUT ───────────────────────────────────────────────────────────────────
@@ -52,7 +56,8 @@ proxyRequest(resp, "GET", agentPath, null, userId);
         if (userId < 0) return;
 
         String body = readBody(req);
-proxyRequest(resp, "PUT", buildAgentPath(req, userId), body, userId);
+log.debug("WORKSPACE PUT | userId={} | path={}", userId, buildAgentPath(req, userId));
+        proxyRequest(resp, "PUT", buildAgentPath(req, userId), body, userId);
     }
 
     // ── POST ──────────────────────────────────────────────────────────────────
@@ -63,7 +68,8 @@ proxyRequest(resp, "PUT", buildAgentPath(req, userId), body, userId);
         if (userId < 0) return;
 
         String body = readBody(req);
-proxyRequest(resp, "POST", buildAgentPath(req, userId), body, userId);
+log.debug("WORKSPACE POST | userId={} | path={}", userId, buildAgentPath(req, userId));
+        proxyRequest(resp, "POST", buildAgentPath(req, userId), body, userId);
     }
 
     // ── DELETE ────────────────────────────────────────────────────────────────
@@ -77,7 +83,8 @@ proxyRequest(resp, "POST", buildAgentPath(req, userId), body, userId);
         String queryString = req.getQueryString();
         if (queryString != null) agentPath += "?" + queryString;
 
-proxyRequest(resp, "DELETE", agentPath, null, userId);
+log.debug("WORKSPACE DELETE | userId={} | path={}", userId, agentPath);
+        proxyRequest(resp, "DELETE", agentPath, null, userId);
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
@@ -145,6 +152,8 @@ proxyRequest(resp, "DELETE", agentPath, null, userId);
                 }
             }
         } catch (java.net.ConnectException | java.net.SocketTimeoutException e) {
+            log.error("WORKSPACE — agent unreachable | method={} | path={} | error={}",
+                    method, agentPath, e.getMessage());
             ResponseUtil.sendError(resp, 502, "AI Agent unreachable: " + e.getMessage());
         } finally {
             if (conn != null) conn.disconnect();

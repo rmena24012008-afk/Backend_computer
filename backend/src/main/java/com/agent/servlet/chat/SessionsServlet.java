@@ -2,9 +2,11 @@ package com.agent.servlet.chat;
 
 import com.agent.dao.SessionDao;
 import com.agent.model.ChatSession;
+import com.agent.util.AppLogger;
 import com.agent.util.JsonUtil;
 import com.agent.util.ResponseUtil;
 import com.google.gson.JsonObject;
+import org.slf4j.Logger;
 import javax.servlet.ServletException;
 import javax.servlet.annotation.WebServlet;
 import javax.servlet.http.HttpServlet;
@@ -17,17 +19,10 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-/**
- * GET  /api/sessions  — List all chat sessions for the authenticated user.
- * POST /api/sessions  — Create a new chat session.
- *
- * <p>v1.1: Both responses now include the {@code summary} field
- * from the new {@code chat_sessions.summary} column. The field is
- * {@code null} for new sessions or pre-migration sessions until the
- * AI layer generates a summary.
- */
 @WebServlet("/api/sessions")
 public class SessionsServlet extends HttpServlet {
+
+    private static final Logger log = AppLogger.get(SessionsServlet.class);
 
     @Override
     protected void doGet(HttpServletRequest request, HttpServletResponse response)
@@ -49,9 +44,11 @@ public class SessionsServlet extends HttpServlet {
                 data.add(item);
             }
 
+            log.debug("SESSIONS GET | userId={} | count={}", userId, data.size());
             ResponseUtil.sendSuccess(response, data);
 
         } catch (Exception e) {
+            log.error("SESSIONS GET — error | error={}", e.getMessage(), e);
             ResponseUtil.sendError(response, 500, "Internal server error: " + e.getMessage());
         }
     }
@@ -88,9 +85,12 @@ public class SessionsServlet extends HttpServlet {
             data.put("summary",    session.getSummary());   // v1.1 — null on creation
             data.put("created_at", session.getCreatedAt());
 
+            log.info("SESSIONS POST — created | userId={} | sessionId={} | title={}",
+                    userId, session.getId(), session.getTitle());
             ResponseUtil.sendCreated(response, data);
 
         } catch (Exception e) {
+            log.error("SESSIONS POST — error | error={}", e.getMessage(), e);
             ResponseUtil.sendError(response, 500, "Internal server error: " + e.getMessage());
         }
     }

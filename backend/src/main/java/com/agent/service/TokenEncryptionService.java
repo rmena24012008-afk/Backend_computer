@@ -1,6 +1,8 @@
 package com.agent.service;
 
 import com.agent.config.AppConfig;
+import com.agent.util.AppLogger;
+import org.slf4j.Logger;
 
 import javax.crypto.Cipher;
 import javax.crypto.SecretKey;
@@ -50,6 +52,8 @@ public final class TokenEncryptionService {
 
     // ── Key (derived once at class-load time) ─────────────────────────────────
 
+    private static final Logger log = AppLogger.get(TokenEncryptionService.class);
+
     private static volatile SecretKey secretKey;
 
     // ── Private constructor — static utility class ────────────────────────────
@@ -90,6 +94,7 @@ public final class TokenEncryptionService {
             return Base64.getEncoder().encodeToString(combined);
 
         } catch (Exception e) {
+            log.error("ENCRYPTION FAILED | error={}", e.getMessage(), e);
             throw new RuntimeException("TokenEncryptionService: encryption failed", e);
         }
     }
@@ -120,6 +125,7 @@ public final class TokenEncryptionService {
             return new String(decrypted, StandardCharsets.UTF_8);
 
         } catch (Exception e) {
+            log.error("DECRYPTION FAILED | error={}", e.getMessage(), e);
             throw new RuntimeException("TokenEncryptionService: decryption failed", e);
         }
     }
@@ -139,6 +145,7 @@ public final class TokenEncryptionService {
             byte[] keyBytes   = sha.digest(secret.getBytes(StandardCharsets.UTF_8));
             return new SecretKeySpec(keyBytes, "AES");
         } catch (Exception e) {
+            log.error("KEY DERIVATION FAILED | error={}", e.getMessage(), e);
             throw new RuntimeException("TokenEncryptionService: key derivation failed", e);
         }
     }
@@ -149,9 +156,11 @@ public final class TokenEncryptionService {
             synchronized (TokenEncryptionService.class) {
                 localKey = secretKey;
                 if (localKey == null) {
+                    log.info("ENCRYPTION — deriving AES key from ENCRYPTION_SECRET...");
                     String secret = AppConfig.requireSecret("ENCRYPTION_SECRET", AppConfig.ENCRYPTION_SECRET, 16);
                     localKey = deriveKey(secret);
                     secretKey = localKey;
+                    log.info("ENCRYPTION — AES key derived successfully.");
                 }
             }
         }

@@ -217,17 +217,32 @@ public class TasksServlet extends HttpServlet {
 
     static String getString(JsonObject source, String field, String defaultValue) {
         JsonElement value = getValue(source, field);
-        return value == null ? defaultValue : value.getAsString();
+        if (value == null) return defaultValue;
+        try {
+            return value.getAsString();
+        } catch (UnsupportedOperationException | IllegalStateException e) {
+            return defaultValue;
+        }
     }
 
     static boolean getBoolean(JsonObject source, String field, boolean defaultValue) {
         JsonElement value = getValue(source, field);
-        return value == null ? defaultValue : value.getAsBoolean();
+        if (value == null) return defaultValue;
+        try {
+            return value.getAsBoolean();
+        } catch (UnsupportedOperationException | IllegalStateException e) {
+            return defaultValue;
+        }
     }
 
     static int getInt(JsonObject source, String field, int defaultValue) {
         JsonElement value = getValue(source, field);
-        return value == null ? defaultValue : value.getAsInt();
+        if (value == null) return defaultValue;
+        try {
+            return value.getAsInt();
+        } catch (UnsupportedOperationException | IllegalStateException | NumberFormatException e) {
+            return defaultValue;
+        }
     }
 
     private static JsonElement getValue(JsonObject source, String field) {
@@ -235,7 +250,12 @@ public class TasksServlet extends HttpServlet {
             return null;
         }
         JsonElement value = source.get(field);
-        return value == null || value.isJsonNull() ? null : value;
+        if (value == null || value.isJsonNull()) {
+            return null;
+        }
+        // Extra guard: if the element is a complex type (array/object) but caller expects primitive,
+        // return null so the caller's default is used instead of throwing.
+        return value;
     }
 
     /**

@@ -3,31 +3,16 @@ package com.agent.dao;
 import com.agent.config.DatabaseConfig;
 import com.agent.model.AuthToken;
 import com.agent.service.TokenEncryptionService;
+import com.agent.util.AppLogger;
+import org.slf4j.Logger;
 
 import java.sql.*;
 import java.util.ArrayList;
 import java.util.List;
 
-/**
- * Data Access Object for the {@code auth_tokens} table (v1.1 migration).
- *
- * <h3>Encryption contract</h3>
- * The following columns are <em>always encrypted</em> at rest using
- * {@link TokenEncryptionService} (AES-256-GCM):
- * <ul>
- *   <li>{@code access_token}</li>
- *   <li>{@code refresh_token}</li>
- *   <li>{@code client_secret}</li>
- * </ul>
- * This class handles transparent encryption on write and decryption on read;
- * callers always work with plain-text values via the {@link AuthToken} model.
- *
- * <h3>Upsert semantics</h3>
- * {@link #upsert(AuthToken)} uses {@code INSERT … ON DUPLICATE KEY UPDATE} to
- * enforce the {@code UNIQUE KEY uq_user_provider (user_id, provider)} constraint.
- * Re-linking an existing provider simply overwrites the stored tokens.
- */
 public class AuthTokenDao {
+
+    private static final Logger log = AppLogger.get(AuthTokenDao.class);
 
     // ── Write operations ──────────────────────────────────────────────────────
 
@@ -39,6 +24,7 @@ public class AuthTokenDao {
      * @throws RuntimeException on any SQL or encryption error
      */
     public static void upsert(AuthToken token) {
+        log.debug("AUTH_TOKEN UPSERT | userId={} | provider={}", token.getUserId(), token.getProvider());
         String sql = """
                 INSERT INTO auth_tokens
                     (user_id, provider, header_type, access_token, refresh_token,
@@ -63,18 +49,21 @@ public class AuthTokenDao {
             stmt.setLong(1,   token.getUserId());
             stmt.setString(2, token.getProvider());
             stmt.setString(3, token.getHeaderType() != null ? token.getHeaderType() : "Bearer");
-            stmt.setString(4, TokenEncryptionService.encrypt(token.getAccessToken()));    // 🔒
-            stmt.setString(5, TokenEncryptionService.encrypt(token.getRefreshToken()));   // 🔒
+            stmt.setString(4, TokenEncryptionService.encrypt(token.getAccessToken()));
+            stmt.setString(5, TokenEncryptionService.encrypt(token.getRefreshToken()));
             stmt.setTimestamp(6, token.getExpiresAt());
             stmt.setString(7, token.getClientId());
-            stmt.setString(8, TokenEncryptionService.encrypt(token.getClientSecret()));   // 🔒
+            stmt.setString(8, TokenEncryptionService.encrypt(token.getClientSecret()));
             stmt.setString(9, token.getTokenEndpoint());
             stmt.setString(10, token.getOauthTokenLink());
             stmt.setString(11, token.getScope());
 
             stmt.executeUpdate();
+            log.info("AUTH_TOKEN UPSERT OK | userId={} | provider={}", token.getUserId(), token.getProvider());
 
         } catch (SQLException e) {
+            log.error("AUTH_TOKEN UPSERT FAILED | userId={} | provider={} | error={}",
+                    token.getUserId(), token.getProvider(), e.getMessage(), e);
             throw new RuntimeException("DB error upserting auth token for provider '"
                     + token.getProvider() + "'", e);
         }
@@ -90,6 +79,7 @@ public class AuthTokenDao {
      * @return the decrypted {@link AuthToken}, or {@code null} if not found
      */
     public static AuthToken findByUserAndProvider(long userId, String provider) {
+        log.debug("AUTH_TOKEN FIND | userId={} | provider={}", userId, provider);
         String sql = "SELECT * FROM auth_tokens WHERE user_id = ? AND provider = ?";
         try (Connection conn = DatabaseConfig.getConnection();
              PreparedStatement stmt = conn.prepareStatement(sql)) {
@@ -99,11 +89,15 @@ public class AuthTokenDao {
             ResultSet rs = stmt.executeQuery();
 
             if (rs.next()) {
+                log.debug("AUTH_TOKEN FOUND | userId={} | provider={}", userId, provider);
                 return mapRow(rs);
             }
+            log.debug("AUTH_TOKEN NOT FOUND | userId={} | provider={}", userId, provider);
             return null;
 
         } catch (SQLException e) {
+            log.error("AUTH_TOKEN FIND FAILED | userId={} | provider={} | error={}",
+                    userId, provider, e.getMessage(), e);
             throw new RuntimeException("DB error finding auth token for user=" + userId
                     + " provider=" + provider, e);
         }
@@ -116,6 +110,7 @@ public class AuthTokenDao {
      * @return list of decrypted {@link AuthToken} objects (may be empty)
      */
     public static List<AuthToken> findByUser(long userId) {
+        log.debug("AUTH_TOKEN LIST | userId={}", userId);
         String sql = "SELECT * FROM auth_tokens WHERE user_id = ?";
         List<AuthToken> tokens = new ArrayList<>();
         try (Connection conn = DatabaseConfig.getConnection();
@@ -127,9 +122,11 @@ public class AuthTokenDao {
             while (rs.next()) {
                 tokens.add(mapRow(rs));
             }
+            log.debug("AUTH_TOKEN LIST OK | userId={} | count={}", userId, tokens.size());
             return tokens;
 
         } catch (SQLException e) {
+            log.error("AUTH_TOKEN LIST FAILED | userId={} | error={}", userId, e.getMessage(), e);
             throw new RuntimeException("DB error listing auth tokens for user=" + userId, e);
         }
     }
@@ -144,6 +141,7 @@ public class AuthTokenDao {
      * @param provider the provider identifier
      */
     public static void delete(long userId, String provider) {
+        log.info("AUTH_TOKEN DELETE | userId={} | provider={}", userId, provider);
         String sql = "DELETE FROM auth_tokens WHERE user_id = ? AND provider = ?";
         try (Connection conn = DatabaseConfig.getConnection();
              PreparedStatement stmt = conn.prepareStatement(sql)) {
@@ -151,8 +149,11 @@ public class AuthTokenDao {
             stmt.setLong(1, userId);
             stmt.setString(2, provider);
             stmt.executeUpdate();
+            log.info("AUTH_TOKEN DELETE OK | userId={} | provider={}", userId, provider);
 
         } catch (SQLException e) {
+            log.error("AUTH_TOKEN DELETE FAILED | userId={} | provider={} | error={}",
+                    userId, provider, e.getMessage(), e);
             throw new RuntimeException("DB error deleting auth token for user=" + userId
                     + " provider=" + provider, e);
         }
@@ -166,14 +167,17 @@ public class AuthTokenDao {
      * @param userId the user's primary key
      */
     public static void deleteAllForUser(long userId) {
+        log.info("AUTH_TOKEN DELETE_ALL | userId={}", userId);
         String sql = "DELETE FROM auth_tokens WHERE user_id = ?";
         try (Connection conn = DatabaseConfig.getConnection();
              PreparedStatement stmt = conn.prepareStatement(sql)) {
 
             stmt.setLong(1, userId);
             stmt.executeUpdate();
+            log.info("AUTH_TOKEN DELETE_ALL OK | userId={}", userId);
 
         } catch (SQLException e) {
+            log.error("AUTH_TOKEN DELETE_ALL FAILED | userId={} | error={}", userId, e.getMessage(), e);
             throw new RuntimeException("DB error deleting all auth tokens for user=" + userId, e);
         }
     }
@@ -193,11 +197,11 @@ public class AuthTokenDao {
         token.setUserId(rs.getLong("user_id"));
         token.setProvider(rs.getString("provider"));
         token.setHeaderType(rs.getString("header_type"));
-        token.setAccessToken(TokenEncryptionService.decrypt(rs.getString("access_token")));    // 🔓
-        token.setRefreshToken(TokenEncryptionService.decrypt(rs.getString("refresh_token")));  // 🔓
+        token.setAccessToken(TokenEncryptionService.decrypt(rs.getString("access_token")));
+        token.setRefreshToken(TokenEncryptionService.decrypt(rs.getString("refresh_token")));
         token.setExpiresAt(rs.getTimestamp("expires_at"));
         token.setClientId(rs.getString("client_id"));
-        token.setClientSecret(TokenEncryptionService.decrypt(rs.getString("client_secret")));  // 🔓
+        token.setClientSecret(TokenEncryptionService.decrypt(rs.getString("client_secret")));
         token.setTokenEndpoint(rs.getString("token_endpoint"));
         token.setOauthTokenLink(rs.getString("oauth_token_link"));
         token.setScope(rs.getString("scope"));

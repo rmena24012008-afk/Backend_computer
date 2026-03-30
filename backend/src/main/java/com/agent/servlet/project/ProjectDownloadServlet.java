@@ -91,6 +91,8 @@ public class ProjectDownloadServlet extends HttpServlet {
 
             int statusCode = conn.getResponseCode();
             if (statusCode != 200) {
+                log.error("PROJECT_DOWNLOAD — executor returned non-200 | userId={} | projectId={} | status={}",
+                        userId, projectId, statusCode);
                 ResponseUtil.sendError(response, 502, "Failed to download project from executor");
                 return;
             }
@@ -118,7 +120,11 @@ public class ProjectDownloadServlet extends HttpServlet {
                 conn.disconnect();
             }
 
+        log.info("PROJECT_DOWNLOAD — served | userId={} | projectId={} | projectName={}",
+                    userId, projectId, project.getName());
+
         } catch (Exception e) {
+            log.error("PROJECT_DOWNLOAD — error | error={}", e.getMessage(), e);
             ResponseUtil.sendError(response, 500, "Internal server error: " + e.getMessage());
         }
     }

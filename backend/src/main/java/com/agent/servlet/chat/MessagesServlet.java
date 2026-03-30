@@ -3,7 +3,9 @@ package com.agent.servlet.chat;
 import com.agent.dao.MessageDao;
 import com.agent.dao.SessionDao;
 import com.agent.model.ChatMessage;
+import com.agent.util.AppLogger;
 import com.agent.util.ResponseUtil;
+import org.slf4j.Logger;
 import javax.servlet.ServletException;
 import javax.servlet.annotation.WebServlet;
 import javax.servlet.http.HttpServlet;
@@ -16,18 +18,10 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-/**
- * GET /api/sessions/{id}/messages — Fetch all messages for a chat session
- *
- * Mapped to /api/messages/* — the session ID is passed as a path parameter.
- * Path format: /api/messages/{sessionId}
- *
- * NOTE: Servlet spec does NOT support mid-path wildcards like /api/sessions/X/messages.
- * The pattern /api/sessions/* is already taken by SessionServlet, so we use a
- * dedicated /api/messages/* path to avoid routing conflicts.
- */
 @WebServlet("/api/messages/*")
 public class MessagesServlet extends HttpServlet {
+
+    private static final Logger log = AppLogger.get(MessagesServlet.class);
 
     @Override
     protected void doGet(HttpServletRequest request, HttpServletResponse response)
@@ -77,9 +71,11 @@ public class MessagesServlet extends HttpServlet {
                 data.add(item);
             }
 
+            log.debug("MESSAGES GET | userId={} | sessionId={} | count={}", userId, sessionId, data.size());
             ResponseUtil.sendSuccess(response, data);
 
         } catch (Exception e) {
+            log.error("MESSAGES GET | error={}", e.getMessage(), e);
             ResponseUtil.sendError(response, 500, "Internal server error: " + e.getMessage());
         }
     }

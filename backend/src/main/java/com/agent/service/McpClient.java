@@ -2,8 +2,10 @@ package com.agent.service;
 
 import com.agent.config.AppConfig;
 import com.agent.model.ChatMessage;
+import com.agent.util.AppLogger;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
+import org.slf4j.Logger;
 
 import java.io.*;
 import java.net.HttpURLConnection;
@@ -17,6 +19,7 @@ import java.util.List;
  */
 public class McpClient {
 
+    private static final Logger log = AppLogger.get(McpClient.class);
     private static final String MCP_URL = AppConfig.FLASK_AGENT_URL;
 
     /**
@@ -40,6 +43,9 @@ public class McpClient {
     public static void streamChat(long userId, long sessionId, String message,
                                   List<ChatMessage> history, SseCallback callback) throws Exception {
 
+        log.info("MCP_CLIENT REQUEST | userId={} | sessionId={} | url={}",
+                userId, sessionId, MCP_URL + "/agent/chat");
+
         // Build request body
         JsonObject requestBody = new JsonObject();
         requestBody.addProperty("session_id", sessionId);
@@ -62,11 +68,23 @@ public class McpClient {
         conn.setConnectTimeout(10000);       // 10 second connect timeout
         conn.setReadTimeout(300000);         // 5 minute read timeout for long AI responses
 
+        long sendStart = System.currentTimeMillis();
+
         // Send request body
         try (OutputStream os = conn.getOutputStream()) {
             os.write(requestBody.toString().getBytes(StandardCharsets.UTF_8));
         }
 
+        int httpStatus = conn.getResponseCode();
+        log.debug("MCP_CLIENT CONNECTED | userId={} | sessionId={} | httpStatus={} | connectMs={}",
+                userId, sessionId, httpStatus, System.currentTimeMillis() - sendStart);
+
+        if (httpStatus < 200 || httpStatus >= 300) {
+            log.error("MCP_CLIENT ERROR | userId={} | sessionId={} | httpStatus={}",
+                    userId, sessionId, httpStatus);
+        }
+
+        int eventCount = 0;
         // Read SSE stream
         try (BufferedReader reader = new BufferedReader(
                 new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8))) {
@@ -79,7 +97,9 @@ public class McpClient {
                     currentEvent = line.substring(7).trim();
                 } else if (line.startsWith("data: ")) {
                     String data = line.substring(6);
+                    log.trace("MCP_CLIENT SSE | userId={} | sessionId={} | event={}", userId, sessionId, currentEvent);
                     callback.onEvent(currentEvent, data);
+                    eventCount++;
 
                     // Stop reading after terminal events
                     if ("done".equals(currentEvent) || "error".equals(currentEvent)) {
@@ -90,6 +110,8 @@ public class McpClient {
             }
         } finally {
             conn.disconnect();
+            log.info("MCP_CLIENT DONE | userId={} | sessionId={} | events={} | totalMs={}",
+                    userId, sessionId, eventCount, System.currentTimeMillis() - sendStart);
         }
     }
 

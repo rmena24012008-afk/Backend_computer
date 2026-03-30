@@ -2,8 +2,10 @@ package com.agent.dao;
 
 import com.agent.config.DatabaseConfig;
 import com.agent.model.User;
+import com.agent.util.AppLogger;
 import com.agent.util.JsonUtil;
 import com.google.gson.JsonObject;
+import org.slf4j.Logger;
 
 import java.sql.*;
 
@@ -21,19 +23,25 @@ import java.sql.*;
  */
 public class UserDao {
 
+	private static final Logger log = AppLogger.get(UserDao.class);
+
 	/**
 	 * Find a user by email address.
 	 */
 	public static User findByEmail(String email) {
+		log.debug("USER FIND_BY_EMAIL | email={}", email);
 		String sql = "SELECT * FROM users WHERE email = ?";
 		try (Connection conn = DatabaseConfig.getConnection(); PreparedStatement stmt = conn.prepareStatement(sql)) {
 			stmt.setString(1, email);
 			ResultSet rs = stmt.executeQuery();
-			if (rs.next())
+			if (rs.next()) {
+				log.debug("USER FOUND | email={}", email);
 				return mapRow(rs);
+			}
+			log.debug("USER NOT FOUND | email={}", email);
 			return null;
 		} catch (SQLException e) {
-			e.printStackTrace();
+			log.error("USER FIND_BY_EMAIL FAILED | email={} | error={}", email, e.getMessage(), e);
 			throw new RuntimeException("DB error finding user by email", e);
 		}
 	}
@@ -42,15 +50,19 @@ public class UserDao {
 	 * Find a user by username.
 	 */
 	public static User findByUsername(String username) {
+		log.debug("USER FIND_BY_USERNAME | username={}", username);
 		String sql = "SELECT * FROM users WHERE username = ?";
 		try (Connection conn = DatabaseConfig.getConnection(); PreparedStatement stmt = conn.prepareStatement(sql)) {
 			stmt.setString(1, username);
 			ResultSet rs = stmt.executeQuery();
 			if (rs.next()) {
+				log.debug("USER FOUND | username={}", username);
 				return mapRow(rs);
 			}
+			log.debug("USER NOT FOUND | username={}", username);
 			return null;
 		} catch (SQLException e) {
+			log.error("USER FIND_BY_USERNAME FAILED | username={} | error={}", username, e.getMessage(), e);
 			throw new RuntimeException("DB error finding user by username", e);
 		}
 	}
@@ -59,6 +71,7 @@ public class UserDao {
 	 * Find a user by ID.
 	 */
 	public static User findById(long id) {
+		log.debug("USER FIND_BY_ID | id={}", id);
 		String sql = "SELECT * FROM users WHERE id = ?";
 		try (Connection conn = DatabaseConfig.getConnection(); PreparedStatement stmt = conn.prepareStatement(sql)) {
 			stmt.setLong(1, id);
@@ -66,8 +79,10 @@ public class UserDao {
 			if (rs.next()) {
 				return mapRow(rs);
 			}
+			log.debug("USER NOT FOUND | id={}", id);
 			return null;
 		} catch (SQLException e) {
+			log.error("USER FIND_BY_ID FAILED | id={} | error={}", id, e.getMessage(), e);
 			throw new RuntimeException("DB error finding user by id", e);
 		}
 	}
@@ -80,6 +95,7 @@ public class UserDao {
 	 * {@link #updatePreferences(long, JsonObject)} to set them later.
 	 */
 	public static long create(String username, String email, String passwordHash) {
+		log.info("USER CREATE | username={} | email={}", username, email);
 		String sql = "INSERT INTO users (username, email, password_hash) VALUES (?, ?, ?)";
 		try (Connection conn = DatabaseConfig.getConnection();
 				PreparedStatement stmt = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
@@ -89,8 +105,11 @@ public class UserDao {
 			stmt.executeUpdate();
 			ResultSet keys = stmt.getGeneratedKeys();
 			keys.next();
-			return keys.getLong(1);
+			long userId = keys.getLong(1);
+			log.info("USER CREATE OK | userId={} | username={} | email={}", userId, username, email);
+			return userId;
 		} catch (SQLException e) {
+			log.error("USER CREATE FAILED | username={} | email={} | error={}", username, email, e.getMessage(), e);
 			throw new RuntimeException("DB error creating user", e);
 		}
 	}
@@ -107,13 +126,17 @@ public class UserDao {
 	 * @return {@code true} if exactly one row was updated
 	 */
 	public static boolean updateTheme(long userId, String theme) {
+		log.debug("USER UPDATE_THEME | userId={} | theme={}", userId, theme);
 		String sql = "UPDATE users SET theme = ? WHERE id = ?";
 		try (Connection conn = DatabaseConfig.getConnection();
 				PreparedStatement stmt = conn.prepareStatement(sql)) {
 			stmt.setString(1, theme);
 			stmt.setLong(2, userId);
-			return stmt.executeUpdate() == 1;
+			boolean updated = stmt.executeUpdate() == 1;
+			log.debug("USER UPDATE_THEME {} | userId={}", updated ? "OK" : "NO_ROWS", userId);
+			return updated;
 		} catch (SQLException e) {
+			log.error("USER UPDATE_THEME FAILED | userId={} | error={}", userId, e.getMessage(), e);
 			throw new RuntimeException("DB error updating user theme", e);
 		}
 	}
@@ -130,6 +153,7 @@ public class UserDao {
 	 * @param preferences the complete merged preferences object, or {@code null}
 	 */
 	public static void updatePreferences(long userId, JsonObject preferences) {
+		log.debug("USER UPDATE_PREFERENCES | userId={}", userId);
 		String sql = "UPDATE users SET preferences = ? WHERE id = ?";
 		try (Connection conn = DatabaseConfig.getConnection(); PreparedStatement stmt = conn.prepareStatement(sql)) {
 			if (preferences == null) {
@@ -139,7 +163,9 @@ public class UserDao {
 			}
 			stmt.setLong(2, userId);
 			stmt.executeUpdate();
+			log.debug("USER UPDATE_PREFERENCES OK | userId={}", userId);
 		} catch (SQLException e) {
+			log.error("USER UPDATE_PREFERENCES FAILED | userId={} | error={}", userId, e.getMessage(), e);
 			throw new RuntimeException("DB error updating user preferences", e);
 		}
 	}
@@ -169,8 +195,9 @@ public class UserDao {
 		if (prefsJson != null && !prefsJson.isBlank()) {
 			try {
 				user.setPreferences(JsonUtil.parse(prefsJson));
-			} catch (Exception ignored) {
-				// Malformed JSON in DB — treat as no preferences stored
+			} catch (Exception e) {
+				log.warn("USER mapRow — failed to parse preferences JSON | userId={} | error={}",
+						user.getId(), e.getMessage());
 			}
 		}
 

@@ -1,6 +1,8 @@
 package com.agent.filter;
 
 import com.agent.config.AppConfig;
+import com.agent.util.AppLogger;
+import org.slf4j.Logger;
 import javax.servlet.*;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
@@ -16,9 +18,11 @@ import java.io.IOException;
  */
 public class CorsFilter implements Filter {
 
+    private static final Logger log = AppLogger.get(CorsFilter.class);
+
     @Override
     public void init(FilterConfig filterConfig) throws ServletException {
-        // No initialization needed
+        log.info("CorsFilter initialised | allowedOrigins={}", AppConfig.ALLOWED_ORIGINS);
     }
 
     @Override
@@ -60,6 +64,6 @@ public class CorsFilter implements Filter {
 
     @Override
     public void destroy() {
-        // No cleanup needed
+        log.info("CorsFilter destroyed.");
     }
 }

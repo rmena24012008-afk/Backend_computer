@@ -2,8 +2,10 @@ package com.agent.service;
 
 import com.agent.dao.AuthTokenDao;
 import com.agent.model.AuthToken;
+import com.agent.util.AppLogger;
 import com.agent.util.JsonUtil;
 import com.google.gson.JsonObject;
+import org.slf4j.Logger;
 
 import java.io.IOException;
 import java.io.OutputStream;
@@ -14,14 +16,9 @@ import java.nio.charset.StandardCharsets;
 import java.sql.Timestamp;
 import java.util.Map;
 
-/**
- * Service that handles the complete OAuth2 token lifecycle:
- *   1. Build the authorization URL (redirect user to provider)
- *   2. Exchange authorization code for access + refresh tokens
- *   3. Refresh expired access tokens using the refresh token
- *   4. Return a valid (auto-refreshed) access token for API calls
- */
 public class OAuthTokenService {
+
+    private static final Logger log = AppLogger.get(OAuthTokenService.class);
 
     /* ──────────────────────────────────────────────
      * 1) Build the authorization URL
@@ -65,19 +62,22 @@ public class OAuthTokenService {
                 + "&code="          + encode(authCode)
                 + "&redirect_uri="  + encode(redirectUri);
 
-        System.out.println("[OAuthTokenService] Exchange payload: " + payload.replaceAll("client_secret=[^&]+", "client_secret=***"));
+        log.info("OAUTH EXCHANGE | userId={} | provider={} | endpoint={}", userId, provider, tokenEndpoint);
+        log.debug("OAUTH EXCHANGE payload: {}", payload.replaceAll("client_secret=[^&]+", "client_secret=***"));
 
         // POST to token endpoint
         JsonObject response = doPost(tokenEndpoint, payload);
 
-        System.out.println("[OAuthTokenService] Token response has access_token="
-                + response.has("access_token") + " refresh_token=" + response.has("refresh_token"));
+        log.debug("OAUTH EXCHANGE response | hasAccessToken={} | hasRefreshToken={}",
+                response.has("access_token"), response.has("refresh_token"));
 
         if (response.has("error")) {
             String error = response.get("error").getAsString();
             String desc  = response.has("error_description")
                     ? response.get("error_description").getAsString() : "";
-            throw new RuntimeException("OAuth token exchange failed: " + error + " — " + desc);
+            log.error("OAUTH EXCHANGE FAILED | userId={} | provider={} | error={} | desc={}",
+                    userId, provider, error, desc);
+            throw new RuntimeException("OAuth token exchange failed: " + error + " - " + desc);
         }
 
         // Extract tokens
@@ -106,8 +106,8 @@ public class OAuthTokenService {
         // Persist to DB (encrypted)
         AuthTokenDao.upsert(stored);
 
-        System.out.println("[OAuthTokenService] Tokens saved for user=" + userId
-                + " provider=" + provider + " expires_at=" + expiresAt);
+        log.info("OAUTH EXCHANGE OK | userId={} | provider={} | expiresAt={}",
+                userId, provider, expiresAt);
 
         return stored;
     }
@@ -131,7 +131,7 @@ public class OAuthTokenService {
                 + "&client_secret=" + encode(stored.getClientSecret())
                 + "&refresh_token=" + encode(stored.getRefreshToken());
 
-        System.out.println("[OAuthTokenService] Refresh payload for provider=" + provider);
+        log.info("OAUTH REFRESH | userId={} | provider={}", userId, provider);
 
         JsonObject response = doPost(stored.getTokenEndpoint(), payload);
 
@@ -139,7 +139,9 @@ public class OAuthTokenService {
             String error = response.get("error").getAsString();
             String desc  = response.has("error_description")
                     ? response.get("error_description").getAsString() : "";
-            throw new RuntimeException("OAuth refresh failed: " + error + " — " + desc);
+            log.error("OAUTH REFRESH FAILED | userId={} | provider={} | error={} | desc={}",
+                    userId, provider, error, desc);
+            throw new RuntimeException("OAuth refresh failed: " + error + " - " + desc);
         }
 
         String newAccessToken = response.has("access_token")
@@ -163,8 +165,8 @@ public class OAuthTokenService {
 
         AuthTokenDao.upsert(stored);
 
-        System.out.println("[OAuthTokenService] Refreshed tokens for user=" + userId
-                + " provider=" + provider + " new_expires_at=" + stored.getExpiresAt());
+        log.info("OAUTH REFRESH OK | userId={} | provider={} | newExpiresAt={}",
+                userId, provider, stored.getExpiresAt());
 
         return stored;
     }
@@ -181,7 +183,7 @@ public class OAuthTokenService {
 
         // Auto-refresh if expired
         if (stored.isExpired() && stored.getRefreshToken() != null && !stored.getRefreshToken().isBlank()) {
-            System.out.println("[OAuthTokenService] Token expired for provider=" + provider + ", auto-refreshing...");
+            log.info("OAUTH TOKEN EXPIRED | auto-refreshing | userId={} | provider={}", userId, provider);
             return refreshAccessToken(userId, provider);
         }
 
@@ -213,7 +215,7 @@ public class OAuthTokenService {
             String body = new String(is.readAllBytes(), StandardCharsets.UTF_8);
             conn.disconnect();
 
-            System.out.println("[OAuthTokenService] HTTP " + status + " from " + urlStr);
+            log.debug("OAUTH HTTP {} from {}", status, urlStr);
             return JsonUtil.parse(body);
 
         } catch (IOException e) {

@@ -2,8 +2,10 @@ package com.agent.servlet.project;
 
 import com.agent.dao.ProjectDao;
 import com.agent.model.Project;
+import com.agent.util.AppLogger;
 import com.agent.util.ResponseUtil;
 import com.google.gson.JsonParser;
+import org.slf4j.Logger;
 import javax.servlet.ServletException;
 import javax.servlet.annotation.WebServlet;
 import javax.servlet.http.HttpServlet;
@@ -16,11 +18,10 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-/**
- * GET /api/projects — List all projects for the authenticated user.
- */
 @WebServlet("/api/projects")
 public class ProjectsServlet extends HttpServlet {
+
+    private static final Logger log = AppLogger.get(ProjectsServlet.class);
 
     @Override
     protected void doGet(HttpServletRequest request, HttpServletResponse response)
@@ -54,9 +55,11 @@ public class ProjectsServlet extends HttpServlet {
                 data.add(item);
             }
 
+            log.debug("PROJECTS GET | userId={} | count={}", userId, data.size());
             ResponseUtil.sendSuccess(response, data);
 
         } catch (Exception e) {
+            log.error("PROJECTS GET | error={}", e.getMessage(), e);
             ResponseUtil.sendError(response, 500, "Internal server error: " + e.getMessage());
         }
     }

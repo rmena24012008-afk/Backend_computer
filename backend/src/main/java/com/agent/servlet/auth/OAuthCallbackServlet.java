@@ -2,9 +2,11 @@ package com.agent.servlet.auth;
 
 import com.agent.model.AuthToken;
 import com.agent.service.OAuthTokenService;
+import com.agent.util.AppLogger;
 import com.agent.util.JsonUtil;
 import com.agent.util.ResponseUtil;
 import com.google.gson.JsonObject;
+import org.slf4j.Logger;
 
 import javax.servlet.ServletException;
 import javax.servlet.http.HttpServlet;
@@ -22,10 +24,13 @@ import java.util.Map;
  */
 public class OAuthCallbackServlet extends HttpServlet {
 
+    private static final Logger log = AppLogger.get(OAuthCallbackServlet.class);
+
     @Override
     protected void doGet(HttpServletRequest request, HttpServletResponse response)
             throws ServletException, IOException {
         try {
+            log.info("OAUTH_CALLBACK GET | ip={}", request.getRemoteAddr());
             String code        = request.getParameter("code");
             String state       = request.getParameter("state");
             String redirectUri = request.getParameter("redirect_uri");
@@ -75,9 +80,12 @@ public class OAuthCallbackServlet extends HttpServlet {
             data.put("expires_at",        exchanged.getExpiresAt() != null ? exchanged.getExpiresAt().toString() : null);
             data.put("scope",             exchanged.getScope());
 
+            log.info("OAUTH_CALLBACK GET — tokens exchanged | userId={} | provider={}",
+                    userId, exchanged.getProvider());
             ResponseUtil.sendSuccess(response, data);
 
         } catch (Exception e) {
+            log.error("OAUTH_CALLBACK GET — error | error={}", e.getMessage(), e);
             ResponseUtil.sendError(response, 500, "OAuth callback error: " + e.getMessage());
         }
     }
@@ -91,6 +99,7 @@ public class OAuthCallbackServlet extends HttpServlet {
             throws ServletException, IOException {
         try {
             long userId = ((Number) request.getAttribute("userId")).longValue();
+            log.info("OAUTH_CALLBACK POST | userId={}", userId);
 
             String body = new String(request.getInputStream().readAllBytes());
             if (body == null || body.isBlank()) {
@@ -133,9 +142,12 @@ public class OAuthCallbackServlet extends HttpServlet {
             data.put("has_refresh_token", exchanged.getRefreshToken() != null);
             data.put("expires_at", exchanged.getExpiresAt() != null ? exchanged.getExpiresAt().toString() : null);
 
+            log.info("OAUTH_CALLBACK POST — tokens exchanged | userId={} | provider={}", userId, exchanged.getProvider());
             ResponseUtil.sendSuccess(response, data);
 
         } catch (Exception e) {
+            log.error("OAUTH_CALLBACK POST — error | userId={} | error={}", 
+                    request.getAttribute("userId"), e.getMessage(), e);
             ResponseUtil.sendError(response, 500, "OAuth callback error: " + e.getMessage());
         }
     }

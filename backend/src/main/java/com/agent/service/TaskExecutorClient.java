@@ -1,11 +1,12 @@
 package com.agent.service;
-
 import com.agent.config.AppConfig;
 import com.agent.dao.ScheduledTaskDao;
 import com.agent.dao.TaskRunLogDao;
 import com.agent.model.ScheduledTask;
+import com.agent.util.AppLogger;
 import com.agent.util.JsonUtil;
 import com.google.gson.JsonObject;
+import org.slf4j.Logger;
 import javax.websocket.*;
 
 import java.io.IOException;
@@ -18,16 +19,10 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 
-/**
- * Singleton WebSocket client that connects to the Task Executor (Port 6000).
- * Handles:
- *   - Sending commands (cancel task, etc.) and waiting for responses
- *   - Receiving async push notifications (task run updates, task completed)
- *   - Heartbeat ping/pong every 30 seconds
- *   - Auto-reconnect on connection loss
- */
 @ClientEndpoint
 public class TaskExecutorClient {
+
+    private static final Logger log = AppLogger.get(TaskExecutorClient.class);
 
     private static TaskExecutorClient instance;
     private Session wsSession;
@@ -51,12 +46,12 @@ public class TaskExecutorClient {
     // ── Connection Management ──
 
     private void connect() {
+        String wsUrl = AppConfig.TASK_EXECUTOR_WS_URL;
         try {
             WebSocketContainer container = ContainerProvider.getWebSocketContainer();
-            String wsUrl = AppConfig.TASK_EXECUTOR_WS_URL;
             container.connectToServer(this, new URI(wsUrl));
         } catch (Exception e) {
-            System.err.println("[TaskExecutorClient] Connection failed: " + e.getMessage());
+            log.error("TASK_EXECUTOR WS connection failed | wsUrl={} | error={}", wsUrl, e.getMessage(), e);
             scheduleReconnect();
         }
     }
@@ -65,7 +60,7 @@ public class TaskExecutorClient {
     public void onOpen(Session session) {
         this.wsSession = session;
         this.connected = true;
-        System.out.println("[TaskExecutorClient] Connected to Task Executor");
+        log.info("TASK_EXECUTOR WS CONNECTED | sessionId={}", session.getId());
         startHeartbeat();
     }
 
@@ -102,21 +97,21 @@ public class TaskExecutorClient {
                     break;
             }
         } catch (Exception e) {
-            System.err.println("[TaskExecutorClient] Error processing message: " + e.getMessage());
+            log.error("TASK_EXECUTOR WS message processing error | error={}", e.getMessage(), e);
         }
     }
 
     @OnClose
     public void onClose(Session session, CloseReason reason) {
         this.connected = false;
-        System.out.println("[TaskExecutorClient] Connection closed: " + reason.getReasonPhrase());
+        log.warn("TASK_EXECUTOR WS CLOSED | reason={}", reason.getReasonPhrase());
         stopHeartbeat();
         scheduleReconnect();
     }
 
     @OnError
     public void onError(Session session, Throwable throwable) {
-        System.err.println("[TaskExecutorClient] WebSocket error: " + throwable.getMessage());
+        log.error("TASK_EXECUTOR WS ERROR | error={}", throwable.getMessage(), throwable);
     }
 
     // ── Send Methods ──
@@ -188,10 +183,9 @@ public class TaskExecutorClient {
                 ScheduledTaskDao.updateStatus(taskId, "running");
             }
 
-            System.out.println("[TaskExecutorClient] Task run update: " + taskId +
-                    " run #" + runNumber + " status=" + status);
+            log.info("TASK_EXECUTOR run update | taskId={} | run #{} | status={}", taskId, runNumber, status);
         } catch (Exception e) {
-            System.err.println("[TaskExecutorClient] Error handling task run update: " + e.getMessage());
+            log.error("TASK_EXECUTOR error handling task run update | error={}", e.getMessage(), e);
         }
     }
 
@@ -208,9 +202,9 @@ public class TaskExecutorClient {
                 ScheduledTaskDao.updateOutputFile(taskId, outputFile);
             }
 
-            System.out.println("[TaskExecutorClient] Task completed: " + taskId);
+            log.info("TASK_EXECUTOR task completed | taskId={}", taskId);
         } catch (Exception e) {
-            System.err.println("[TaskExecutorClient] Error handling task completed: " + e.getMessage());
+            log.error("TASK_EXECUTOR error handling task completed | error={}", e.getMessage(), e);
         }
     }
 
@@ -227,7 +221,7 @@ public class TaskExecutorClient {
                     ping.addProperty("type", "ping");
                     send(ping);
                 } catch (IOException e) {
-                    System.err.println("[TaskExecutorClient] Heartbeat failed: " + e.getMessage());
+                    log.warn("TASK_EXECUTOR heartbeat failed | error={}", e.getMessage());
                     scheduleReconnect();
                 }
             }
@@ -248,7 +242,7 @@ public class TaskExecutorClient {
         new Timer(true).schedule(new TimerTask() {
             @Override
             public void run() {
-                System.out.println("[TaskExecutorClient] Attempting reconnection...");
+                log.info("TASK_EXECUTOR attempting reconnection...");
                 connect();
             }
         }, 5000); // Retry after 5 seconds

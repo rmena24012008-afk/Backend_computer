@@ -1,5 +1,8 @@
 package com.agent.filter;
 
+import com.agent.util.AppLogger;
+import org.slf4j.Logger;
+
 import javax.servlet.Filter;
 import javax.servlet.FilterChain;
 import javax.servlet.FilterConfig;
@@ -16,9 +19,11 @@ import java.io.IOException;
  */
 public class ApiPathNormalizationFilter implements Filter {
 
+    private static final Logger log = AppLogger.get(ApiPathNormalizationFilter.class);
+
     @Override
     public void init(FilterConfig filterConfig) {
-        // No initialization needed.
+        log.info("ApiPathNormalizationFilter initialised.");
     }
 
     @Override
@@ -36,6 +41,7 @@ public class ApiPathNormalizationFilter implements Filter {
                 normalizedPath = "/";
             }
 
+            log.debug("PATH NORMALIZE — trailing slash removed | original={} | normalized={}", path, normalizedPath);
             RequestDispatcher dispatcher = request.getRequestDispatcher(normalizedPath);
             dispatcher.forward(request, response);
             return;
@@ -46,6 +52,6 @@ public class ApiPathNormalizationFilter implements Filter {
 
     @Override
     public void destroy() {
-        // No cleanup needed.
+        log.info("ApiPathNormalizationFilter destroyed.");
     }
 }

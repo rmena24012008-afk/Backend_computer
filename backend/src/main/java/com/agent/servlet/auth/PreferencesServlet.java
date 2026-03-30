@@ -2,10 +2,12 @@ package com.agent.servlet.auth;
 
 import com.agent.dao.UserDao;
 import com.agent.model.User;
+import com.agent.util.AppLogger;
 import com.agent.util.JsonUtil;
 import com.agent.util.ResponseUtil;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import org.slf4j.Logger;
 import javax.servlet.ServletException;
 import javax.servlet.http.HttpServlet;
 import javax.servlet.http.HttpServletRequest;
@@ -27,6 +29,8 @@ import java.util.Map;
  * every preference key. Stored values always take priority over defaults.
  */
 public class PreferencesServlet extends HttpServlet {
+
+    private static final Logger log = AppLogger.get(PreferencesServlet.class);
 
     // ── Application-level defaults ────────────────────────────────────────────
 
@@ -73,9 +77,11 @@ public class PreferencesServlet extends HttpServlet {
             Map<String, Object> data = new LinkedHashMap<>();
             data.put("preferences", effective);
 
+            log.debug("PREFERENCES GET — served | userId={}", userId);
             ResponseUtil.sendSuccess(response, data);
 
         } catch (Exception e) {
+            log.error("PREFERENCES GET — error | error={}", e.getMessage(), e);
             ResponseUtil.sendError(response, 500, "Internal server error: " + e.getMessage());
         }
     }
@@ -126,9 +132,11 @@ public class PreferencesServlet extends HttpServlet {
             data.put("message",     "Preferences updated");
             data.put("preferences", merged);
 
+            log.info("PREFERENCES PUT — updated | userId={}", userId);
             ResponseUtil.sendSuccess(response, data);
 
         } catch (Exception e) {
+            log.error("PREFERENCES PUT — error | error={}", e.getMessage(), e);
             ResponseUtil.sendError(response, 500, "Internal server error: " + e.getMessage());
         }
     }
