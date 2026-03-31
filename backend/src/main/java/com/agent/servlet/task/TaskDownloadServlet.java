@@ -1,8 +1,6 @@
 package com.agent.servlet.task;
 
 import com.agent.config.AppConfig;
-import com.agent.dao.ScheduledTaskDao;
-import com.agent.model.ScheduledTask;
 import com.agent.util.AppLogger;
 import com.agent.util.ResponseUtil;
 import org.slf4j.Logger;
@@ -22,15 +20,11 @@ import java.net.URL;
 /**
  * GET /api/task-download/{taskId} — Download the output file of a scheduled task.
  *
- * Resolution strategy (matches the Scheduler spec):
- *   1. Proxy to the AI Agent (Flask): GET /tasks/{userId}/{taskId}/download
- *      The agent checks task.result.output_file → task.output_file in the JSON store.
- *   2. Fallback: fetch from the Task Executor using the MySQL output_file path.
+ * Proxies the download request to the AI Agent (Flask):
+ *   GET {FLASK_AGENT_URL}/tasks/{userId}/{taskId}/download
  *
- * Supports ?token= query param for browser downloads that can't set Authorization headers.
- *
- * NOTE: Servlet spec does NOT support mid-path wildcards like /api/tasks/X/download.
- * Remapped to /api/task-download/* for correct routing.
+ * The agent resolves the output file from its own store.
+ * No local DB access — the MCP team manages task persistence on the agent side.
  */
 @WebServlet("/api/task-download/*")
 public class TaskDownloadServlet extends HttpServlet {
@@ -60,21 +54,7 @@ public class TaskDownloadServlet extends HttpServlet {
 
             String taskId = parts[1];
 
-            // Verify task exists
-            ScheduledTask task = ScheduledTaskDao.findByTaskId(taskId);
-            if (task == null) {
-                ResponseUtil.sendError(response, 404, "Task not found: " + taskId);
-                return;
-            }
-
-            // Verify ownership — return 403 if task belongs to a different user
-            if (task.getUserId() != userId) {
-                ResponseUtil.sendError(response, 403, "Access denied");
-                return;
-            }
-
-            // ── Strategy 1: Proxy download via AI Agent (Flask) ──
-            // The agent resolves output_file from task.result.output_file or task.output_file
+            // Proxy download via AI Agent (Flask)
             boolean agentDownloaded = proxyDownloadFromAgent(userId, taskId, response);
             if (agentDownloaded) {
                 return;
@@ -82,13 +62,13 @@ public class TaskDownloadServlet extends HttpServlet {
 
             log.debug("TASK_DOWNLOAD — agent download unavailable, trying executor fallback | taskId={}", taskId);
 
-            // ── Strategy 2: Fallback to Task Executor using MySQL output_file ──
-            if (task.getOutputFile() == null || task.getOutputFile().isEmpty()) {
-                ResponseUtil.sendError(response, 404, "No output file available for this task");
+            // Fallback: try the Task Executor directly
+            boolean executorDownloaded = proxyDownloadFromExecutor(userId, taskId, response);
+            if (executorDownloaded) {
                 return;
             }
 
-            proxyDownloadFromExecutor(userId, taskId, task.getOutputFile(), response);
+            ResponseUtil.sendError(response, 404, "No output file available for this task");
 
         } catch (Exception e) {
             log.error("TASK_DOWNLOAD — unexpected error | error={}", e.getMessage(), e);
@@ -143,7 +123,6 @@ public class TaskDownloadServlet extends HttpServlet {
             if (contentDisposition != null) {
                 response.setHeader("Content-Disposition", contentDisposition);
             } else {
-                // Derive filename from taskId as fallback
                 response.setHeader("Content-Disposition", "attachment; filename=\"" + taskId + "_output\"");
             }
 
@@ -176,17 +155,26 @@ public class TaskDownloadServlet extends HttpServlet {
     }
 
     /**
-     * Fallback: fetch the output file from the Task Executor (port 6000).
-     * GET http://localhost:6000/download/{userId}/{filePath}
+     * Fallback: fetch the output file from the Task Executor.
+     * GET {EXECUTOR_URL}/download/{userId}/{taskId}
+     *
+     * @return true if the executor served the file, false otherwise.
      */
-    private void proxyDownloadFromExecutor(long userId, String taskId, String outputFile,
-                                           HttpServletResponse response) throws IOException {
+    private boolean proxyDownloadFromExecutor(long userId, String taskId,
+                                              HttpServletResponse response) {
         HttpURLConnection conn = null;
         try {
-            String executorBaseUrl = AppConfig.TASK_EXECUTOR_WS_URL
-                    .replace("ws://", "http://")
-                    .replace("/ws", "");
-            String downloadUrl = executorBaseUrl + "/download/" + userId + "/" + outputFile;
+            String rawUrl = AppConfig.TASK_EXECUTOR_WS_URL;
+            if (rawUrl == null || rawUrl.isBlank()) {
+                return false;
+            }
+            if (rawUrl.startsWith("ws://") || rawUrl.startsWith("wss://")) {
+                rawUrl = rawUrl.replace("ws://", "http://")
+                               .replace("wss://", "https://")
+                               .replace("/ws", "");
+            }
+            String executorBaseUrl = rawUrl.endsWith("/") ? rawUrl.substring(0, rawUrl.length() - 1) : rawUrl;
+            String downloadUrl = executorBaseUrl + "/download/" + userId + "/" + taskId;
 
             URL url = new URL(downloadUrl);
             conn = (HttpURLConnection) url.openConnection();
@@ -205,23 +193,25 @@ public class TaskDownloadServlet extends HttpServlet {
 
             int statusCode = conn.getResponseCode();
             if (statusCode != 200) {
-                log.warn("TASK_DOWNLOAD — executor returned non-200 | taskId={} | status={}", taskId, statusCode);
-                ResponseUtil.sendError(response, 404, "Output file not found on disk");
-                return;
+                log.debug("TASK_DOWNLOAD — executor returned non-200 | taskId={} | status={}", taskId, statusCode);
+                return false;
             }
 
-            // Extract filename from output file path
-            String filename = outputFile.contains("/")
-                    ? outputFile.substring(outputFile.lastIndexOf("/") + 1)
-                    : outputFile;
-
-            // Determine content type based on file extension
+            // Forward headers
             String contentType = conn.getContentType();
-            if (contentType == null || "application/octet-stream".equals(contentType)) {
-                contentType = resolveContentType(filename);
+            String contentDisposition = conn.getHeaderField("Content-Disposition");
+
+            if (contentType != null) {
+                response.setContentType(contentType);
+            } else {
+                response.setContentType("application/octet-stream");
             }
-            response.setContentType(contentType);
-            response.setHeader("Content-Disposition", "attachment; filename=\"" + filename + "\"");
+
+            if (contentDisposition != null) {
+                response.setHeader("Content-Disposition", contentDisposition);
+            } else {
+                response.setHeader("Content-Disposition", "attachment; filename=\"" + taskId + "_output\"");
+            }
 
             int contentLength = conn.getContentLength();
             if (contentLength > 0) {
@@ -239,39 +229,16 @@ public class TaskDownloadServlet extends HttpServlet {
                 out.flush();
             }
 
-            log.info("TASK_DOWNLOAD — served via executor | userId={} | taskId={} | file={}",
-                    userId, taskId, filename);
+            log.info("TASK_DOWNLOAD — served via executor | userId={} | taskId={}", userId, taskId);
+            return true;
 
-        } catch (java.net.ConnectException e) {
-            log.error("TASK_DOWNLOAD — executor unreachable | taskId={} | error={}", taskId, e.getMessage());
-            ResponseUtil.sendError(response, 502, "File download service unavailable");
+        } catch (Exception e) {
+            log.warn("TASK_DOWNLOAD — executor download failed | taskId={} | error={}", taskId, e.getMessage());
+            return false;
         } finally {
             if (conn != null) {
                 conn.disconnect();
             }
         }
-    }
-
-    /**
-     * Resolve Content-Type based on file extension.
-     * Per the Scheduler spec, .xlsx gets the Office MIME type; everything else is octet-stream.
-     */
-    private String resolveContentType(String filename) {
-        if (filename == null) return "application/octet-stream";
-        String lower = filename.toLowerCase();
-        if (lower.endsWith(".xlsx")) {
-            return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
-        } else if (lower.endsWith(".xls")) {
-            return "application/vnd.ms-excel";
-        } else if (lower.endsWith(".csv")) {
-            return "text/csv";
-        } else if (lower.endsWith(".json")) {
-            return "application/json";
-        } else if (lower.endsWith(".pdf")) {
-            return "application/pdf";
-        } else if (lower.endsWith(".zip")) {
-            return "application/zip";
-        }
-        return "application/octet-stream";
     }
 }

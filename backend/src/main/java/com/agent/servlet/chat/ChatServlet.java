@@ -2,7 +2,7 @@ package com.agent.servlet.chat;
 
 import com.agent.config.AppConfig;
 import com.agent.dao.MessageDao;
-import com.agent.dao.ScheduledTaskDao;
+
 import com.agent.dao.SessionDao;
 import com.agent.model.ChatMessage;
 import com.agent.model.ChatSession;
@@ -10,8 +10,6 @@ import com.agent.service.FlaskAgentClient;
 import com.agent.util.AppLogger;
 import com.agent.util.JsonUtil;
 import com.agent.util.ResponseUtil;
-import com.google.gson.JsonArray;
-import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import org.slf4j.Logger;
 
@@ -204,10 +202,8 @@ public class ChatServlet extends HttpServlet {
                     log.debug("CHAT — assistant message saved | sessionId={} | messageId={} | responseLen={}",
                             sessionId, messageId, fullResponse.length());
 
-                    // 9b. Detect schedule_task tool calls in the done payload → save to MySQL
-                    if (donePayloadHolder[0] != null) {
-                        detectAndSaveScheduledTasks(donePayloadHolder[0], userId, sessionId);
-                    }
+                    // Note: Task persistence is now handled by the MCP team on the agent side.
+                    // No local DB writes for scheduled tasks.
 
                     // 10. Update session title if this is the first exchange
                     ChatSession session = SessionDao.findById(sessionId);
@@ -300,120 +296,7 @@ public class ChatServlet extends HttpServlet {
         }
     }
 
-    // ── schedule_task detection ────────────────────────────────────────────
-
-    /**
-     * Inspect the "done" SSE payload for tool_calls containing "schedule_task".
-     * If found and the result has no error, INSERT the task into scheduled_tasks.
-     *
-     * Expected done payload structure:
-     * {
-     *   "full_response": "...",
-     *   "tool_calls": [
-     *     {
-     *       "tool": "schedule_task",
-     *       "input": { "description": "...", "delay_seconds": 10800 },
-     *       "result": { "task_id": "sched_abc123", "status": "scheduled", "total_runs": 16 }
-     *     }
-     *   ]
-     * }
-     */
-    private void detectAndSaveScheduledTasks(JsonObject donePayload, long userId, long sessionId) {
-        try {
-            if (!donePayload.has("tool_calls") || donePayload.get("tool_calls").isJsonNull()) {
-                return;
-            }
-
-            JsonArray toolCalls = donePayload.getAsJsonArray("tool_calls");
-            if (toolCalls == null || toolCalls.isEmpty()) {
-                return;
-            }
-
-            for (JsonElement element : toolCalls) {
-                if (!element.isJsonObject()) continue;
-                JsonObject toolCall = element.getAsJsonObject();
-
-                String toolName = toolCall.has("tool") ? toolCall.get("tool").getAsString() : "";
-                if (!"schedule_task".equals(toolName)) continue;
-
-                // Check for a valid result (no error)
-                if (!toolCall.has("result") || toolCall.get("result").isJsonNull()) continue;
-                JsonObject result;
-                try {
-                    // result may be a JsonObject or a string that needs parsing
-                    if (toolCall.get("result").isJsonObject()) {
-                        result = toolCall.getAsJsonObject("result");
-                    } else {
-                        result = JsonUtil.parse(toolCall.get("result").getAsString());
-                    }
-                } catch (Exception e) {
-                    log.warn("CHAT — failed to parse schedule_task result | error={}", e.getMessage());
-                    continue;
-                }
-
-                if (result.has("error")) {
-                    log.debug("CHAT — schedule_task returned error, skipping DB save | error={}",
-                            result.get("error").getAsString());
-                    continue;
-                }
-
-                // Extract task metadata
-                String taskId = result.has("task_id") ? result.get("task_id").getAsString() : null;
-                if (taskId == null || taskId.isBlank()) {
-                    log.warn("CHAT — schedule_task result missing task_id, skipping");
-                    continue;
-                }
-
-                // Get input fields
-                JsonObject input = toolCall.has("input") && toolCall.get("input").isJsonObject()
-                        ? toolCall.getAsJsonObject("input") : new JsonObject();
-
-                String description = input.has("description")
-                        ? input.get("description").getAsString() : "Scheduled task";
-                int intervalSeconds = input.has("delay_seconds")
-                        ? input.get("delay_seconds").getAsInt()
-                        : (input.has("interval_seconds")
-                                ? input.get("interval_seconds").getAsInt() : 0);
-                int totalRuns = result.has("total_runs")
-                        ? result.get("total_runs").getAsInt() : 0;
-
-                // Calculate ends_at: now + (intervalSeconds * totalRuns) or use duration if provided
-                long durationSeconds = (long) intervalSeconds * Math.max(totalRuns, 1);
-                java.sql.Timestamp endsAt = new java.sql.Timestamp(
-                        System.currentTimeMillis() + (durationSeconds * 1000));
-
-                // Check if the agent provided an explicit end time
-                if (result.has("ends_at") && !result.get("ends_at").isJsonNull()) {
-                    try {
-                        String endsAtStr = result.get("ends_at").getAsString();
-                        endsAt = java.sql.Timestamp.valueOf(
-                                endsAtStr.replace("T", " ").replace("Z", ""));
-                    } catch (Exception e) {
-                        // Use calculated value
-                    }
-                }
-
-                // Save to MySQL (upsert — ON DUPLICATE KEY handled by the DAO)
-                try {
-                    ScheduledTaskDao.create(userId, sessionId, taskId, description,
-                            intervalSeconds, endsAt, totalRuns);
-                    log.info("CHAT — schedule_task saved to DB | userId={} | sessionId={} | taskId={} | " +
-                            "interval={}s | totalRuns={}", userId, sessionId, taskId, intervalSeconds, totalRuns);
-                } catch (Exception e) {
-                    // If it's a duplicate key (task already exists), just log and move on
-                    if (e.getMessage() != null && e.getMessage().contains("Duplicate")) {
-                        log.debug("CHAT — schedule_task already exists in DB | taskId={}", taskId);
-                    } else {
-                        log.error("CHAT — failed to save schedule_task | taskId={} | error={}",
-                                taskId, e.getMessage(), e);
-                    }
-                }
-            }
-        } catch (Exception e) {
-            log.error("CHAT — error detecting scheduled tasks in done payload | error={}",
-                    e.getMessage(), e);
-        }
-    }
+    
 
     @Override
     public void destroy() {

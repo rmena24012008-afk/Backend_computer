@@ -59,7 +59,7 @@ public class ProjectsServlet extends HttpServlet {
             ResponseUtil.sendSuccess(response, data);
 
         } catch (Exception e) {
-            log.error("PROJECTS GET | error={}", e.getMessage(), e);
+            log.error("PROJECTS GET — error | error={}", e.getMessage(), e);
             ResponseUtil.sendError(response, 500, "Internal server error: " + e.getMessage());
         }
     }

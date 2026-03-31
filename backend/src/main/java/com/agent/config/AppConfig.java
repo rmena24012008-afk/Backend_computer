@@ -58,7 +58,9 @@ public class AppConfig {
 
     // ── External Services ───────────────────────────────────────────────
     public static final String FLASK_AGENT_URL     = get("FLASK_AGENT_URL",     "http://localhost:5000");
-    public static final String TASK_EXECUTOR_WS_URL = get("TASK_EXECUTOR_WS_URL", "ws://localhost:6000/ws");
+    // NOTE: Despite the legacy name, this is now an HTTP URL — no WebSocket or port 6000 service exists.
+    // The Flask AI Agent serves all executor endpoints (/download, /download-project, /cancel, /health).
+    public static final String TASK_EXECUTOR_WS_URL = get("TASK_EXECUTOR_WS_URL", "http://localhost:5000");
 
     // ── CORS ────────────────────────────────────────────────────────────
     public static final String FRONTEND_ORIGIN = getCorsOrigins();

@@ -9,7 +9,6 @@ import org.slf4j.Logger;
 import java.sql.*;
 import java.util.ArrayList;
 import java.util.List;
-
 public class AuthTokenDao {
 
     private static final Logger log = AppLogger.get(AuthTokenDao.class);
@@ -29,8 +28,8 @@ public class AuthTokenDao {
                 INSERT INTO auth_tokens
                     (user_id, provider, header_type, access_token, refresh_token,
                      expires_at, client_id, client_secret, token_endpoint, oauth_token_link,
-                     scope)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     scope, redirect_uri)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON DUPLICATE KEY UPDATE
                     header_type      = VALUES(header_type),
                     access_token     = VALUES(access_token),
@@ -40,7 +39,8 @@ public class AuthTokenDao {
                     client_secret    = VALUES(client_secret),
                     token_endpoint   = VALUES(token_endpoint),
                     oauth_token_link = VALUES(oauth_token_link),
-                    scope            = VALUES(scope)
+                    scope            = VALUES(scope),
+                    redirect_uri     = VALUES(redirect_uri)
                 """;
 
         try (Connection conn = DatabaseConfig.getConnection();
@@ -49,14 +49,15 @@ public class AuthTokenDao {
             stmt.setLong(1,   token.getUserId());
             stmt.setString(2, token.getProvider());
             stmt.setString(3, token.getHeaderType() != null ? token.getHeaderType() : "Bearer");
-            stmt.setString(4, TokenEncryptionService.encrypt(token.getAccessToken()));
-            stmt.setString(5, TokenEncryptionService.encrypt(token.getRefreshToken()));
+            stmt.setString(4, TokenEncryptionService.encrypt(token.getAccessToken()));    // 🔒
+            stmt.setString(5, TokenEncryptionService.encrypt(token.getRefreshToken()));   // 🔒
             stmt.setTimestamp(6, token.getExpiresAt());
             stmt.setString(7, token.getClientId());
-            stmt.setString(8, TokenEncryptionService.encrypt(token.getClientSecret()));
+            stmt.setString(8, TokenEncryptionService.encrypt(token.getClientSecret()));   // 🔒
             stmt.setString(9, token.getTokenEndpoint());
             stmt.setString(10, token.getOauthTokenLink());
             stmt.setString(11, token.getScope());
+            stmt.setString(12, token.getRedirectUri());
 
             stmt.executeUpdate();
             log.info("AUTH_TOKEN UPSERT OK | userId={} | provider={}", token.getUserId(), token.getProvider());
@@ -197,14 +198,15 @@ public class AuthTokenDao {
         token.setUserId(rs.getLong("user_id"));
         token.setProvider(rs.getString("provider"));
         token.setHeaderType(rs.getString("header_type"));
-        token.setAccessToken(TokenEncryptionService.decrypt(rs.getString("access_token")));
-        token.setRefreshToken(TokenEncryptionService.decrypt(rs.getString("refresh_token")));
+        token.setAccessToken(TokenEncryptionService.decrypt(rs.getString("access_token")));    // 🔓
+        token.setRefreshToken(TokenEncryptionService.decrypt(rs.getString("refresh_token")));  // 🔓
         token.setExpiresAt(rs.getTimestamp("expires_at"));
         token.setClientId(rs.getString("client_id"));
-        token.setClientSecret(TokenEncryptionService.decrypt(rs.getString("client_secret")));
+        token.setClientSecret(TokenEncryptionService.decrypt(rs.getString("client_secret")));  // 🔓
         token.setTokenEndpoint(rs.getString("token_endpoint"));
         token.setOauthTokenLink(rs.getString("oauth_token_link"));
         token.setScope(rs.getString("scope"));
+        token.setRedirectUri(rs.getString("redirect_uri"));
         token.setUpdatedAt(rs.getTimestamp("updated_at"));
         return token;
     }

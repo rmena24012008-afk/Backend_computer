@@ -75,7 +75,7 @@ public class MessagesServlet extends HttpServlet {
             ResponseUtil.sendSuccess(response, data);
 
         } catch (Exception e) {
-            log.error("MESSAGES GET | error={}", e.getMessage(), e);
+            log.error("MESSAGES GET — error | error={}", e.getMessage(), e);
             ResponseUtil.sendError(response, 500, "Internal server error: " + e.getMessage());
         }
     }

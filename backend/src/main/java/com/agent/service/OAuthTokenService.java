@@ -27,19 +27,25 @@ public class OAuthTokenService {
         if (token.getOauthTokenLink() == null || token.getOauthTokenLink().isBlank()) {
             throw new IllegalStateException("oauth_token_link is not set for provider: " + token.getProvider());
         }
+
+        // Prefer the passed redirectUri; fall back to the one stored in the token
+        String effectiveRedirectUri = (redirectUri != null && !redirectUri.isBlank())
+                ? redirectUri
+                : token.getRedirectUri();
+
         String state = token.getProvider() + "_" + token.getUserId() + "_" + System.currentTimeMillis();
         return token.getOauthTokenLink()
                 + "?scope="         + encode(scope)
                 + "&client_id="     + encode(token.getClientId())
                 + "&state="         + encode(state)
                 + "&response_type=code"
-                + "&redirect_uri="  + encode(redirectUri)
+                + "&redirect_uri="  + encode(effectiveRedirectUri)
                 + "&prompt=consent"
                 + "&access_type=offline";
     }
 
     /* ──────────────────────────────────────────────
-     * 2) Exchange authorization code → tokens
+     * 2) Exchange authorization code for tokens
      * ────────────────────────────────────────────── */
     public static AuthToken exchangeAuthorizationCode(long userId, String provider,
                                                        String authCode, String redirectUri) {
@@ -55,12 +61,17 @@ public class OAuthTokenService {
             throw new IllegalStateException("token_endpoint is not configured for provider: " + provider);
         }
 
+        // Resolve redirect_uri: prefer caller-supplied, fall back to stored value
+        String effectiveRedirectUri = (redirectUri != null && !redirectUri.isBlank())
+                ? redirectUri
+                : stored.getRedirectUri();
+
         // Build form payload (matches reference code pattern)
         String payload = "grant_type=authorization_code"
                 + "&client_id="     + encode(stored.getClientId())
                 + "&client_secret=" + encode(stored.getClientSecret())
                 + "&code="          + encode(authCode)
-                + "&redirect_uri="  + encode(redirectUri);
+                + "&redirect_uri="  + encode(effectiveRedirectUri);
 
         log.info("OAUTH EXCHANGE | userId={} | provider={} | endpoint={}", userId, provider, tokenEndpoint);
         log.debug("OAUTH EXCHANGE payload: {}", payload.replaceAll("client_secret=[^&]+", "client_secret=***"));
@@ -77,7 +88,7 @@ public class OAuthTokenService {
                     ? response.get("error_description").getAsString() : "";
             log.error("OAUTH EXCHANGE FAILED | userId={} | provider={} | error={} | desc={}",
                     userId, provider, error, desc);
-            throw new RuntimeException("OAuth token exchange failed: " + error + " - " + desc);
+            throw new RuntimeException("OAuth token exchange failed: " + error + " — " + desc);
         }
 
         // Extract tokens
@@ -88,7 +99,7 @@ public class OAuthTokenService {
             throw new RuntimeException("No access_token in provider response: " + response);
         }
 
-        // Calculate expiry: expires_in (seconds) → absolute timestamp with 60s safety buffer
+        // Calculate expiry: expires_in (seconds) to absolute timestamp with 60s safety buffer
         Timestamp expiresAt = null;
         if (response.has("expires_in")) {
             long expiresInSeconds = response.get("expires_in").getAsLong();
@@ -103,10 +114,15 @@ public class OAuthTokenService {
         }
         stored.setExpiresAt(expiresAt);
 
+        // Persist the redirect_uri used for this exchange so future flows can reuse it
+        if (effectiveRedirectUri != null && !effectiveRedirectUri.isBlank()) {
+            stored.setRedirectUri(effectiveRedirectUri);
+        }
+
         // Persist to DB (encrypted)
         AuthTokenDao.upsert(stored);
 
-        log.info("OAUTH EXCHANGE OK | userId={} | provider={} | expiresAt={}",
+        log.info("OAUTH EXCHANGE OK — tokens saved | userId={} | provider={} | expiresAt={}",
                 userId, provider, expiresAt);
 
         return stored;
@@ -141,7 +157,7 @@ public class OAuthTokenService {
                     ? response.get("error_description").getAsString() : "";
             log.error("OAUTH REFRESH FAILED | userId={} | provider={} | error={} | desc={}",
                     userId, provider, error, desc);
-            throw new RuntimeException("OAuth refresh failed: " + error + " - " + desc);
+            throw new RuntimeException("OAuth refresh failed: " + error + " — " + desc);
         }
 
         String newAccessToken = response.has("access_token")
@@ -183,7 +199,7 @@ public class OAuthTokenService {
 
         // Auto-refresh if expired
         if (stored.isExpired() && stored.getRefreshToken() != null && !stored.getRefreshToken().isBlank()) {
-            log.info("OAUTH TOKEN EXPIRED | auto-refreshing | userId={} | provider={}", userId, provider);
+            log.info("OAUTH TOKEN EXPIRED — auto-refreshing | userId={} | provider={}", userId, provider);
             return refreshAccessToken(userId, provider);
         }
 

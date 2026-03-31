@@ -67,11 +67,14 @@ public class ProjectDownloadServlet extends HttpServlet {
                 return;
             }
 
-            // Fetch ZIP from Task Executor
-            // GET http://localhost:6000/download-project/{userId}/{projectName}
-            String executorBaseUrl = AppConfig.TASK_EXECUTOR_WS_URL
-                    .replace("ws://", "http://")
-                    .replace("/ws", "");
+            // Fetch ZIP from Task Executor (Flask AI Agent)
+            String rawUrl = AppConfig.TASK_EXECUTOR_WS_URL;
+            if (rawUrl.startsWith("ws://") || rawUrl.startsWith("wss://")) {
+                rawUrl = rawUrl.replace("ws://", "http://")
+                               .replace("wss://", "https://")
+                               .replace("/ws", "");
+            }
+            String executorBaseUrl = rawUrl.endsWith("/") ? rawUrl.substring(0, rawUrl.length() - 1) : rawUrl;
             String downloadUrl = executorBaseUrl + "/download-project/" + userId + "/" + project.getName();
 
             URL url = new URL(downloadUrl);

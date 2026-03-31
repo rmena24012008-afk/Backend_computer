@@ -1,250 +1,187 @@
 package com.agent.service;
+
 import com.agent.config.AppConfig;
-import com.agent.dao.ScheduledTaskDao;
-import com.agent.dao.TaskRunLogDao;
-import com.agent.model.ScheduledTask;
 import com.agent.util.AppLogger;
-import com.agent.util.JsonUtil;
 import com.google.gson.JsonObject;
 import org.slf4j.Logger;
-import javax.websocket.*;
 
+import java.io.BufferedReader;
 import java.io.IOException;
-import java.net.URI;
-import java.util.Map;
-import java.util.Timer;
-import java.util.TimerTask;
-import java.util.UUID;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.TimeUnit;
+import java.io.InputStreamReader;
+import java.io.OutputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.nio.charset.StandardCharsets;
 
-@ClientEndpoint
+/**
+ * HTTP-based client for communicating with the Task Executor service.
+ *
+ * Replaces the previous WebSocket-based implementation. All communication
+ * with the Task Executor (port 6000) and the AI Agent (Flask) now uses
+ * plain HTTP requests — no persistent WebSocket connections needed.
+ *
+ * Task run updates and completion notifications are received via the
+ * {@link com.agent.servlet.task.TaskUpdateWebhookServlet} HTTP webhook.
+ */
 public class TaskExecutorClient {
 
     private static final Logger log = AppLogger.get(TaskExecutorClient.class);
 
     private static TaskExecutorClient instance;
-    private Session wsSession;
-    private final Map<String, CompletableFuture<String>> pendingRequests = new ConcurrentHashMap<>();
-    private Timer heartbeatTimer;
-    private volatile boolean connected = false;
+
+    private final String executorBaseUrl;
 
     // ── Singleton Access ──
 
-    /**
-     * Get the singleton instance, connecting on first call.
-     */
     public static synchronized TaskExecutorClient getInstance() {
         if (instance == null) {
             instance = new TaskExecutorClient();
-            instance.connect();
         }
         return instance;
     }
 
-    // ── Connection Management ──
-
-    private void connect() {
-        String wsUrl = AppConfig.TASK_EXECUTOR_WS_URL;
-        try {
-            WebSocketContainer container = ContainerProvider.getWebSocketContainer();
-            container.connectToServer(this, new URI(wsUrl));
-        } catch (Exception e) {
-            log.error("TASK_EXECUTOR WS connection failed | wsUrl={} | error={}", wsUrl, e.getMessage(), e);
-            scheduleReconnect();
+    private TaskExecutorClient() {
+        // Derive HTTP base URL from the configured executor URL
+        // Handles both legacy ws:// URLs and modern http(s):// URLs
+        String raw = AppConfig.TASK_EXECUTOR_WS_URL;
+        if (raw.startsWith("ws://") || raw.startsWith("wss://")) {
+            raw = raw.replace("ws://", "http://")
+                     .replace("wss://", "https://")
+                     .replace("/ws", "");
         }
+        // Strip trailing slash if present
+        this.executorBaseUrl = raw.endsWith("/") ? raw.substring(0, raw.length() - 1) : raw;
+        log.info("TASK_EXECUTOR HTTP client initialized | baseUrl={}", executorBaseUrl);
     }
 
-    @OnOpen
-    public void onOpen(Session session) {
-        this.wsSession = session;
-        this.connected = true;
-        log.info("TASK_EXECUTOR WS CONNECTED | sessionId={}", session.getId());
-        startHeartbeat();
-    }
-
-    @OnMessage
-    public void onMessage(String message) {
-        try {
-            JsonObject json = JsonUtil.parse(message);
-            String type = json.has("type") ? json.get("type").getAsString() : "";
-
-            // Handle pong (heartbeat response)
-            if ("pong".equals(type)) {
-                return;
-            }
-
-            // Handle request-response pattern (for sendAndWait calls)
-            if (json.has("request_id")) {
-                String requestId = json.get("request_id").getAsString();
-                CompletableFuture<String> future = pendingRequests.remove(requestId);
-                if (future != null) {
-                    future.complete(message);
-                }
-            }
-
-            // Handle async push notifications (scheduled task updates)
-            switch (type) {
-                case "task_run_update":
-                    handleTaskRunUpdate(json);
-                    break;
-                case "task_completed":
-                    handleTaskCompleted(json);
-                    break;
-                default:
-                    // Other message types handled by request-response pattern above
-                    break;
-            }
-        } catch (Exception e) {
-            log.error("TASK_EXECUTOR WS message processing error | error={}", e.getMessage(), e);
-        }
-    }
-
-    @OnClose
-    public void onClose(Session session, CloseReason reason) {
-        this.connected = false;
-        log.warn("TASK_EXECUTOR WS CLOSED | reason={}", reason.getReasonPhrase());
-        stopHeartbeat();
-        scheduleReconnect();
-    }
-
-    @OnError
-    public void onError(Session session, Throwable throwable) {
-        log.error("TASK_EXECUTOR WS ERROR | error={}", throwable.getMessage(), throwable);
-    }
-
-    // ── Send Methods ──
+    // ── Public API ──
 
     /**
-     * Send a command and wait for the response (request-response pattern).
+     * Send a cancel command to the Task Executor via HTTP POST.
      *
-     * @param command        the JSON command to send
-     * @param timeoutSeconds maximum time to wait for a response
-     * @return the response JSON string
-     * @throws Exception if the send fails or times out
+     * @param taskId the task to cancel
+     * @return true if the executor acknowledged the cancel, false otherwise
      */
-    public String sendAndWait(JsonObject command, long timeoutSeconds) throws Exception {
-        String requestId = "req_" + UUID.randomUUID().toString().substring(0, 8);
-        command.addProperty("request_id", requestId);
-
-        CompletableFuture<String> future = new CompletableFuture<>();
-        pendingRequests.put(requestId, future);
-
-        wsSession.getBasicRemote().sendText(command.toString());
-
+    public boolean cancelTask(String taskId) {
         try {
-            return future.get(timeoutSeconds, TimeUnit.SECONDS);
+            JsonObject payload = new JsonObject();
+            payload.addProperty("type", "cancel_task");
+            payload.addProperty("task_id", taskId);
+
+            String url = executorBaseUrl + "/cancel/" + taskId;
+            int status = postJson(url, payload.toString());
+
+            log.info("TASK_EXECUTOR cancel request | taskId={} | httpStatus={}", taskId, status);
+            return status >= 200 && status < 300;
         } catch (Exception e) {
-            pendingRequests.remove(requestId);
-            throw e;
+            log.warn("TASK_EXECUTOR cancel request failed | taskId={} | error={}", taskId, e.getMessage());
+            return false;
         }
     }
 
     /**
-     * Send a command without waiting for a response (fire and forget).
+     * Send an arbitrary JSON command to the Task Executor via HTTP POST.
+     *
+     * @param path    relative path (e.g. "/execute")
+     * @param command JSON payload
+     * @return HTTP response body, or null on failure
      */
-    public void send(JsonObject command) throws IOException {
-        if (wsSession != null && wsSession.isOpen()) {
-            wsSession.getBasicRemote().sendText(command.toString());
-        } else {
-            throw new IOException("WebSocket not connected to Task Executor");
-        }
+    public String send(String path, JsonObject command) throws IOException {
+        String url = executorBaseUrl + path;
+        return postJsonWithResponse(url, command.toString());
     }
 
     /**
-     * Check if the WebSocket connection is active.
+     * Check if the Task Executor service is reachable.
      */
     public boolean isConnected() {
-        return connected && wsSession != null && wsSession.isOpen();
-    }
-
-    // ── Async Push Handlers ──
-
-    /**
-     * Handle a scheduled task run update (pushed by Task Executor after each run).
-     */
-    private void handleTaskRunUpdate(JsonObject json) {
         try {
-            String taskId = json.get("task_id").getAsString();
-            int runNumber = json.get("run_number").getAsInt();
-            String status = json.get("status").getAsString();
-            String resultData = json.has("result") ? json.get("result").toString() : null;
-
-            // Save run log to DB
-            TaskRunLogDao.create(taskId, runNumber, status, resultData, null);
-
-            // Increment completed runs counter
-            ScheduledTaskDao.incrementCompletedRuns(taskId);
-
-            // Only promote from "scheduled" to "running" — never overwrite completed/cancelled
-            ScheduledTask task = ScheduledTaskDao.findByTaskId(taskId);
-            if (task != null && "scheduled".equals(task.getStatus())) {
-                ScheduledTaskDao.updateStatus(taskId, "running");
-            }
-
-            log.info("TASK_EXECUTOR run update | taskId={} | run #{} | status={}", taskId, runNumber, status);
+            URL url = new URL(executorBaseUrl + "/health");
+            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+            conn.setRequestMethod("GET");
+            conn.setConnectTimeout(3_000);
+            conn.setReadTimeout(3_000);
+            int status = conn.getResponseCode();
+            conn.disconnect();
+            return status >= 200 && status < 300;
         } catch (Exception e) {
-            log.error("TASK_EXECUTOR error handling task run update | error={}", e.getMessage(), e);
+            return false;
         }
     }
 
     /**
-     * Handle task completed notification (all runs finished).
+     * Get the derived HTTP base URL of the Task Executor.
      */
-    private void handleTaskCompleted(JsonObject json) {
-        try {
-            String taskId = json.get("task_id").getAsString();
-            String outputFile = json.has("output_file") ? json.get("output_file").getAsString() : null;
+    public String getBaseUrl() {
+        return executorBaseUrl;
+    }
 
-            ScheduledTaskDao.updateStatus(taskId, "completed");
-            if (outputFile != null) {
-                ScheduledTaskDao.updateOutputFile(taskId, outputFile);
+    // ── Internal HTTP helpers ──
+
+    private int postJson(String urlStr, String jsonBody) throws IOException {
+        HttpURLConnection conn = null;
+        try {
+            URL url = new URL(urlStr);
+            conn = (HttpURLConnection) url.openConnection();
+            conn.setRequestMethod("POST");
+            conn.setConnectTimeout(5_000);
+            conn.setReadTimeout(10_000);
+            conn.setRequestProperty("Content-Type", "application/json");
+            conn.setDoOutput(true);
+
+            String apiKey = AppConfig.get("AI_AGENT_API_KEY", "");
+            if (!apiKey.isBlank()) {
+                conn.setRequestProperty("X-API-Key", apiKey);
             }
 
-            log.info("TASK_EXECUTOR task completed | taskId={}", taskId);
-        } catch (Exception e) {
-            log.error("TASK_EXECUTOR error handling task completed | error={}", e.getMessage(), e);
+            try (OutputStream os = conn.getOutputStream()) {
+                os.write(jsonBody.getBytes(StandardCharsets.UTF_8));
+                os.flush();
+            }
+
+            return conn.getResponseCode();
+        } finally {
+            if (conn != null) conn.disconnect();
         }
     }
 
-    // ── Heartbeat ──
+    private String postJsonWithResponse(String urlStr, String jsonBody) throws IOException {
+        HttpURLConnection conn = null;
+        try {
+            URL url = new URL(urlStr);
+            conn = (HttpURLConnection) url.openConnection();
+            conn.setRequestMethod("POST");
+            conn.setConnectTimeout(5_000);
+            conn.setReadTimeout(10_000);
+            conn.setRequestProperty("Content-Type", "application/json");
+            conn.setDoOutput(true);
 
-    private void startHeartbeat() {
-        stopHeartbeat();
-        heartbeatTimer = new Timer(true);
-        heartbeatTimer.scheduleAtFixedRate(new TimerTask() {
-            @Override
-            public void run() {
-                try {
-                    JsonObject ping = new JsonObject();
-                    ping.addProperty("type", "ping");
-                    send(ping);
-                } catch (IOException e) {
-                    log.warn("TASK_EXECUTOR heartbeat failed | error={}", e.getMessage());
-                    scheduleReconnect();
+            String apiKey = AppConfig.get("AI_AGENT_API_KEY", "");
+            if (!apiKey.isBlank()) {
+                conn.setRequestProperty("X-API-Key", apiKey);
+            }
+
+            try (OutputStream os = conn.getOutputStream()) {
+                os.write(jsonBody.getBytes(StandardCharsets.UTF_8));
+                os.flush();
+            }
+
+            int status = conn.getResponseCode();
+            if (status >= 200 && status < 300) {
+                try (BufferedReader br = new BufferedReader(
+                        new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8))) {
+                    StringBuilder sb = new StringBuilder();
+                    String line;
+                    while ((line = br.readLine()) != null) {
+                        sb.append(line);
+                    }
+                    return sb.toString();
                 }
+            } else {
+                throw new IOException("HTTP " + status + " from Task Executor: " + urlStr);
             }
-        }, 30000, 30000); // Every 30 seconds
-    }
-
-    private void stopHeartbeat() {
-        if (heartbeatTimer != null) {
-            heartbeatTimer.cancel();
-            heartbeatTimer = null;
+        } finally {
+            if (conn != null) conn.disconnect();
         }
-    }
-
-    // ── Reconnection ──
-
-    private void scheduleReconnect() {
-        stopHeartbeat();
-        new Timer(true).schedule(new TimerTask() {
-            @Override
-            public void run() {
-                log.info("TASK_EXECUTOR attempting reconnection...");
-                connect();
-            }
-        }, 5000); // Retry after 5 seconds
     }
 }

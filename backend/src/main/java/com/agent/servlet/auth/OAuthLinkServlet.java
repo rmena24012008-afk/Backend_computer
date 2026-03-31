@@ -19,13 +19,12 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-
 /** POST   /api/auth/oauth/link — Save client credentials & get authorization URL
  * GET    /api/auth/oauth/link — List all linked OAuth providers for the user
  * PUT    /api/auth/oauth/link — Force-refresh an access token
  * DELETE /api/auth/oauth/link — Unlink a provider
  */
-
+ 
 public class OAuthLinkServlet extends HttpServlet {
 
     private static final Logger log = AppLogger.get(OAuthLinkServlet.class);
@@ -78,6 +77,7 @@ public class OAuthLinkServlet extends HttpServlet {
             }
 
             // Build and upsert the AuthToken (no access/refresh token yet)
+            // Now includes redirect_uri to persist it in the DB
             AuthToken token = new AuthToken(
                     userId, provider, headerType,
                     "pending",   // placeholder access_token
@@ -86,6 +86,8 @@ public class OAuthLinkServlet extends HttpServlet {
                     clientId, clientSecret,
                     tokenEndpoint, oauthLink
             );
+            token.setScope(scope);
+            token.setRedirectUri(redirectUri);
             AuthTokenDao.upsert(token);
 
             // Build the authorization URL if oauth_token_link + scope + redirect_uri provided
@@ -102,11 +104,11 @@ public class OAuthLinkServlet extends HttpServlet {
                 data.put("authorization_url", authUrl);
             }
 
-            log.info("OAUTH_LINK POST | credentials saved | userId={} | provider={}", userId, provider);
+            log.info("OAUTH_LINK POST — credentials saved | userId={} | provider={}", userId, provider);
             ResponseUtil.sendCreated(response, data);
 
         } catch (Exception e) {
-            log.error("OAUTH_LINK POST | error={}", e.getMessage(), e);
+            log.error("OAUTH_LINK POST — error | error={}", e.getMessage(), e);
             ResponseUtil.sendError(response, 500, "Error linking provider: " + e.getMessage());
         }
     }
@@ -126,19 +128,20 @@ public class OAuthLinkServlet extends HttpServlet {
                 entry.put("header_type", t.getHeaderType());
                 entry.put("has_access_token", t.getAccessToken() != null && !"pending".equals(t.getAccessToken()));
                 entry.put("has_refresh_token", t.getRefreshToken() != null);
-                entry.put("expires_at", t.getExpiresAt() != null ? t.getExpiresAt().toString() : null);
+                entry.put("expires_at", com.agent.util.TimeUtil.toIST(t.getExpiresAt()));
                 entry.put("is_expired", t.isExpired());
                 entry.put("token_endpoint", t.getTokenEndpoint());
                 entry.put("oauth_token_link", t.getOauthTokenLink());
-                entry.put("updated_at", t.getUpdatedAt() != null ? t.getUpdatedAt().toString() : null);
+                entry.put("redirect_uri", t.getRedirectUri());
+                entry.put("updated_at", com.agent.util.TimeUtil.toIST(t.getUpdatedAt()));
                 result.add(entry);
             }
 
-            log.debug("OAUTH_LINK GET | listed providers | userId={} | count={}", userId, result.size());
+            log.debug("OAUTH_LINK GET — listed providers | userId={} | count={}", userId, result.size());
             ResponseUtil.sendSuccess(response, result);
 
         } catch (Exception e) {
-            log.error("OAUTH_LINK GET | error={}", e.getMessage(), e);
+            log.error("OAUTH_LINK GET — error | error={}", e.getMessage(), e);
             ResponseUtil.sendError(response, 500, "Error listing providers: " + e.getMessage());
         }
     }
@@ -185,15 +188,14 @@ public class OAuthLinkServlet extends HttpServlet {
             data.put("status",       "refreshed");
             data.put("access_token", refreshed.getAccessToken());
             data.put("header_type",  refreshed.getHeaderType());
-            data.put("expires_at",   refreshed.getExpiresAt() != null
-                    ? refreshed.getExpiresAt().toString() : null);
+            data.put("expires_at",   com.agent.util.TimeUtil.toIST(refreshed.getExpiresAt()));
             data.put("scope",        refreshed.getScope());
 
-            log.info("OAUTH_LINK PUT | token refreshed | userId={} | provider={}", userId, refreshed.getProvider());
+            log.info("OAUTH_LINK PUT — token refreshed | userId={} | provider={}", userId, refreshed.getProvider());
             ResponseUtil.sendSuccess(response, data);
 
         } catch (Exception e) {
-            log.error("OAUTH_LINK PUT | error={}", e.getMessage(), e);
+            log.error("OAUTH_LINK PUT — error | error={}", e.getMessage(), e);
             ResponseUtil.sendError(response, 500, "Error refreshing token: " + e.getMessage());
         }
     }
@@ -223,11 +225,11 @@ public class OAuthLinkServlet extends HttpServlet {
             data.put("provider", provider);
             data.put("status", "unlinked");
 
-            log.info("OAUTH_LINK DELETE | provider unlinked | userId={} | provider={}", userId, provider);
+            log.info("OAUTH_LINK DELETE — provider unlinked | userId={} | provider={}", userId, provider);
             ResponseUtil.sendSuccess(response, data);
 
         } catch (Exception e) {
-            log.error("OAUTH_LINK DELETE | error={}", e.getMessage(), e);
+            log.error("OAUTH_LINK DELETE — error | error={}", e.getMessage(), e);
             ResponseUtil.sendError(response, 500, "Error unlinking provider: " + e.getMessage());
         }
     }

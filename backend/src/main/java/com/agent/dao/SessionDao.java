@@ -168,7 +168,7 @@ public class SessionDao {
         session.setId(rs.getLong("id"));
         session.setUserId(rs.getLong("user_id"));
         session.setTitle(rs.getString("title"));
-        session.setSummary(rs.getString("summary"));
+        session.setSummary(rs.getString("summary"));   // v1.1 — may be null
         session.setCreatedAt(rs.getTimestamp("created_at"));
         session.setUpdatedAt(rs.getTimestamp("updated_at"));
         return session;

@@ -1,12 +1,9 @@
 package com.agent.servlet.task;
 
 import com.agent.config.AppConfig;
-import com.agent.dao.ScheduledTaskDao;
-import com.agent.model.ScheduledTask;
 import com.agent.service.TaskExecutorClient;
 import com.agent.util.AppLogger;
 import com.agent.util.ResponseUtil;
-import com.google.gson.JsonObject;
 import org.slf4j.Logger;
 
 import javax.servlet.ServletException;
@@ -15,13 +12,10 @@ import javax.servlet.http.HttpServlet;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
-import java.io.BufferedReader;
 import java.io.IOException;
-import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
-import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -29,13 +23,12 @@ import java.util.Map;
  * POST /api/task-cancel/{taskId} — Cancel a running scheduled task.
  *
  * Flow:
- *   1. Verify ownership in MySQL (returns 404 if missing, 403 if wrong user).
- *   2. Proxy cancel to the AI Agent (Flask) — removes APScheduler job + updates JSON store.
- *   3. Send cancel to the Task Executor via WebSocket (best-effort).
- *   4. Update MySQL status to "cancelled".
+ *   1. Proxy cancel to the AI Agent (Flask) — removes APScheduler job + updates store.
+ *   2. Send cancel to the Task Executor via HTTP (best-effort).
+ *   3. Return cancellation result.
  *
- * NOTE: Servlet spec does NOT support mid-path wildcards like /api/tasks/X/cancel.
- * Remapped to /api/task-cancel/* for correct routing.
+ * No local DB access — the MCP team manages task persistence on the agent side.
+ * Task ownership is verified by the AI Agent.
  */
 @WebServlet("/api/task-cancel/*")
 public class TaskCancelServlet extends HttpServlet {
@@ -65,46 +58,31 @@ public class TaskCancelServlet extends HttpServlet {
 
             String taskId = parts[1];
 
-            // Verify task exists
-            ScheduledTask task = ScheduledTaskDao.findByTaskId(taskId);
-            if (task == null) {
-                ResponseUtil.sendError(response, 404, "Task not found: " + taskId);
-                return;
-            }
-
-            // Verify ownership — return 403 if task belongs to a different user
-            if (task.getUserId() != userId) {
-                ResponseUtil.sendError(response, 403, "Access denied");
-                return;
-            }
-
-            // 1. Proxy cancel to AI Agent (Flask) — removes APScheduler job + updates JSON store
+            // 1. Proxy cancel to AI Agent (Flask) — removes APScheduler job + updates store
             boolean agentCancelOk = cancelViaAgent(userId, taskId);
             if (!agentCancelOk) {
-                log.warn("TASK_CANCEL — agent cancel failed or unreachable, proceeding with local cancel | taskId={}", taskId);
+                log.warn("TASK_CANCEL — agent cancel failed or unreachable | taskId={}", taskId);
+                ResponseUtil.sendError(response, 502,
+                        "Failed to cancel task — agent unreachable or task not found");
+                return;
             }
 
-            // 2. Send cancel command via WebSocket to Task Executor (best-effort)
+            // 2. Send cancel command to Task Executor via HTTP (best-effort)
             try {
                 TaskExecutorClient client = TaskExecutorClient.getInstance();
-                if (client.isConnected()) {
-                    JsonObject cancelCommand = new JsonObject();
-                    cancelCommand.addProperty("type", "cancel_task");
-                    cancelCommand.addProperty("task_id", taskId);
-                    client.send(cancelCommand);
-                    log.debug("TASK_CANCEL — cancel sent to executor via WebSocket | taskId={}", taskId);
+                boolean executorCancelOk = client.cancelTask(taskId);
+                if (executorCancelOk) {
+                    log.debug("TASK_CANCEL — cancel sent to executor via HTTP | taskId={}", taskId);
+                } else {
+                    log.debug("TASK_CANCEL — executor cancel returned non-success or unreachable | taskId={}", taskId);
                 }
             } catch (Exception e) {
                 log.warn("TASK_CANCEL — failed to send cancel to Task Executor | taskId={} | error={}",
                         taskId, e.getMessage());
-                // Continue — still update DB status even if executor is unreachable
+                // Continue — agent cancellation already succeeded
             }
 
-            // 3. Update status in MySQL
-            ScheduledTaskDao.updateStatus(taskId, "cancelled");
-
-            log.info("TASK_CANCEL — task cancelled | userId={} | taskId={} | agentOk={}",
-                    userId, taskId, agentCancelOk);
+            log.info("TASK_CANCEL — task cancelled | userId={} | taskId={}", userId, taskId);
 
             // Build response
             Map<String, Object> data = new LinkedHashMap<>();
@@ -122,8 +100,6 @@ public class TaskCancelServlet extends HttpServlet {
     /**
      * Proxy the cancel request to the AI Agent (Flask Server).
      * POST {FLASK_AGENT_URL}/tasks/{userId}/{taskId}/cancel
-     *
-     * This removes the job from APScheduler and updates the on-disk JSON store.
      *
      * @return true if the agent returned 200, false otherwise
      */

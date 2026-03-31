@@ -1,5 +1,6 @@
 package com.agent.servlet.auth;
 
+import com.agent.dao.AuthTokenDao;
 import com.agent.model.AuthToken;
 import com.agent.service.OAuthTokenService;
 import com.agent.util.AppLogger;
@@ -62,9 +63,16 @@ public class OAuthCallbackServlet extends HttpServlet {
                 return;
             }
 
-            // Determine redirect_uri — try query param, otherwise use request URL
+            // Determine redirect_uri — try query param, then stored DB value, then request URL
             if (redirectUri == null || redirectUri.isBlank()) {
-                redirectUri = request.getRequestURL().toString();
+                AuthToken stored = AuthTokenDao.findByUserAndProvider(userId, provider);
+                if (stored != null && stored.getRedirectUri() != null && !stored.getRedirectUri().isBlank()) {
+                    redirectUri = stored.getRedirectUri();
+                    log.debug("OAUTH_CALLBACK using stored redirect_uri from DB | userId={} | provider={}", userId, provider);
+                } else {
+                    redirectUri = request.getRequestURL().toString();
+                    log.debug("OAUTH_CALLBACK using request URL as redirect_uri | userId={} | provider={}", userId, provider);
+                }
             }
 
             // Exchange authorization code for tokens
@@ -77,7 +85,7 @@ public class OAuthCallbackServlet extends HttpServlet {
             data.put("header_type",       exchanged.getHeaderType());
             data.put("access_token",      exchanged.getAccessToken());
             data.put("has_refresh_token", exchanged.getRefreshToken() != null);
-            data.put("expires_at",        exchanged.getExpiresAt() != null ? exchanged.getExpiresAt().toString() : null);
+            data.put("expires_at",        com.agent.util.TimeUtil.toIST(exchanged.getExpiresAt()));
             data.put("scope",             exchanged.getScope());
 
             log.info("OAUTH_CALLBACK GET — tokens exchanged | userId={} | provider={}",
@@ -93,6 +101,8 @@ public class OAuthCallbackServlet extends HttpServlet {
     /**
      * POST variant: Manually trigger code exchange via JSON body.
      * Body: { "provider": "...", "code": "...", "redirect_uri": "..." }
+     *
+     * If redirect_uri is not provided in the body, the stored value from DB is used.
      */
     @Override
     protected void doPost(HttpServletRequest request, HttpServletResponse response)
@@ -127,9 +137,18 @@ public class OAuthCallbackServlet extends HttpServlet {
                 ResponseUtil.sendError(response, 400, "code (authorization code) is required");
                 return;
             }
+
+            // If redirect_uri not provided in body, fall back to stored DB value
             if (redirectUri == null || redirectUri.isBlank()) {
-                ResponseUtil.sendError(response, 400, "redirect_uri is required");
-                return;
+                AuthToken stored = AuthTokenDao.findByUserAndProvider(userId, provider);
+                if (stored != null && stored.getRedirectUri() != null && !stored.getRedirectUri().isBlank()) {
+                    redirectUri = stored.getRedirectUri();
+                    log.debug("OAUTH_CALLBACK POST using stored redirect_uri from DB | userId={} | provider={}", userId, provider);
+                } else {
+                    ResponseUtil.sendError(response, 400,
+                            "redirect_uri is required (not provided in body and not found in DB)");
+                    return;
+                }
             }
 
             AuthToken exchanged = OAuthTokenService.exchangeAuthorizationCode(
@@ -140,7 +159,7 @@ public class OAuthCallbackServlet extends HttpServlet {
             data.put("status", "tokens_exchanged");
             data.put("has_access_token", exchanged.getAccessToken() != null);
             data.put("has_refresh_token", exchanged.getRefreshToken() != null);
-            data.put("expires_at", exchanged.getExpiresAt() != null ? exchanged.getExpiresAt().toString() : null);
+            data.put("expires_at", com.agent.util.TimeUtil.toIST(exchanged.getExpiresAt()));
 
             log.info("OAUTH_CALLBACK POST — tokens exchanged | userId={} | provider={}", userId, exchanged.getProvider());
             ResponseUtil.sendSuccess(response, data);

@@ -184,4 +184,29 @@
         <url-pattern>/api/auth/oauth/zoho/init</url-pattern>
     </servlet-mapping>
 
+    <!-- ── v1.3 File Transfer servlets ────────────────────────────────── -->
+
+    <servlet>
+        <servlet-name>UploadSessionServlet</servlet-name>
+        <servlet-class>com.agent.servlet.upload.UploadSessionServlet</servlet-class>
+        <multipart-config>
+            <max-file-size>52428800</max-file-size>
+            <max-request-size>262144000</max-request-size>
+            <file-size-threshold>1048576</file-size-threshold>
+        </multipart-config>
+    </servlet>
+    <servlet-mapping>
+        <servlet-name>UploadSessionServlet</servlet-name>
+        <url-pattern>/api/uploads/session/*</url-pattern>
+    </servlet-mapping>
+
+    <servlet>
+        <servlet-name>UploadFileServlet</servlet-name>
+        <servlet-class>com.agent.servlet.upload.UploadFileServlet</servlet-class>
+    </servlet>
+    <servlet-mapping>
+        <servlet-name>UploadFileServlet</servlet-name>
+        <url-pattern>/api/uploads/file/*</url-pattern>
+    </servlet-mapping>
+
 </web-app>

@@ -3,7 +3,7 @@ package com.agent.model;
 import java.sql.Timestamp;
 
 /**
- * AuthToken model — maps to the {@code auth_tokens} table (v1.1 migration).
+ * AuthToken model — maps to the {@code auth_tokens} table (v1.3 migration).
  *
  * <p>Stores OAuth2 access/refresh tokens and related credentials for
  * third-party provider integrations (Google, GitHub, Slack, custom APIs, etc.).
@@ -50,6 +50,12 @@ public class AuthToken {
      * Populated at init time via the MCP server scope-resolution call.
      */
     private String    scope;
+    /**
+     * OAuth2 redirect URI registered with the provider app.
+     * Persisted so that token-exchange and refresh flows can reuse the same URI
+     * without requiring the caller to supply it again.
+     */
+    private String    redirectUri;
     /** Auto-updated timestamp tracking last token refresh. */
     private Timestamp updatedAt;
 
@@ -87,6 +93,19 @@ public class AuthToken {
         this(userId, provider, headerType, accessToken, refreshToken, expiresAt,
              clientId, clientSecret, tokenEndpoint, oauthTokenLink);
         this.scope = scope;
+    }
+
+    /**
+     * Full constructor including scope and redirect_uri.
+     */
+    public AuthToken(long userId, String provider, String headerType,
+                     String accessToken, String refreshToken, Timestamp expiresAt,
+                     String clientId, String clientSecret,
+                     String tokenEndpoint, String oauthTokenLink, String scope,
+                     String redirectUri) {
+        this(userId, provider, headerType, accessToken, refreshToken, expiresAt,
+             clientId, clientSecret, tokenEndpoint, oauthTokenLink, scope);
+        this.redirectUri = redirectUri;
     }
 
     // ── Business helpers ─────────────────────────────────────────────────────
@@ -209,6 +228,14 @@ public class AuthToken {
 
     public void setScope(String scope) {
         this.scope = scope;
+    }
+
+    public String getRedirectUri() {
+        return redirectUri;
+    }
+
+    public void setRedirectUri(String redirectUri) {
+        this.redirectUri = redirectUri;
     }
 
     public Timestamp getUpdatedAt() {
